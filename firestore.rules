@@ -1,0 +1,162 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function role() {
+      return isSignedIn() ? userDoc().data.role : null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && role() == 'admin';
+    }
+
+    function isManager() {
+      return isSignedIn() && role() == 'manager';
+    }
+
+    function isTeam() {
+      return isSignedIn() && role() == 'team';
+    }
+
+    function assignedClientIds() {
+      return userDoc().data.assignedClients;
+    }
+
+    function assignedProjectIds() {
+      return userDoc().data.assignedProjects;
+    }
+
+    function isAssignedToClient(clientId) {
+      return isSignedIn() && clientId in assignedClientIds();
+    }
+
+    function isAssignedToProject(projectId) {
+      return isSignedIn() && projectId in assignedProjectIds();
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && resource.data.role == request.resource.data.role) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow delete: if isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /clients/{clientId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(clientId))
+                  || (isTeam() && isAssignedToClient(clientId));
+      allow create, update, delete: if isAdmin()
+                  || (isManager() && isAssignedToClient(clientId));
+    }
+
+    match /clients/{clientId}/financials/{docId} {
+      allow read: if isAdmin() || (isManager() && isAssignedToClient(clientId));
+      allow write: if isAdmin() || (isManager() && isAssignedToClient(clientId));
+    }
+
+    match /projects/{projectId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(resource.data.clientId))
+                  || (isTeam() && isAssignedToProject(projectId));
+      allow create, update, delete: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId));
+    }
+
+    match /invoices/{invoiceId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(resource.data.clientId));
+      allow create, update, delete: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId));
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(resource.data.clientId));
+      allow create, update, delete: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId));
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isAdmin()
+                  || (isManager() && resource.data.clientId != null
+                      && isAssignedToClient(resource.data.clientId));
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(resource.data.clientId))
+                  || (isTeam() && resource.data.assignedUserId == request.auth.uid);
+      allow create, update: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId))
+                  || (isTeam()
+                      && resource.data.assignedUserId == request.auth.uid
+                      && request.resource.data.assignedUserId == resource.data.assignedUserId
+                      && request.resource.data.clientId == resource.data.clientId);
+      allow delete: if isAdmin() || (isManager() && isAssignedToClient(resource.data.clientId));
+    }
+
+    match /documents/{docId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(resource.data.clientId))
+                  || (isTeam() && (
+                        isAssignedToClient(resource.data.clientId)
+                        || isAssignedToProject(resource.data.projectId)
+                      ));
+      allow create, update, delete: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId));
+    }
+
+    match /content/{contentId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(resource.data.clientId))
+                  || (isTeam() && isAssignedToClient(resource.data.clientId));
+      allow create, update, delete: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId));
+    }
+
+    match /leads/{leadId} {
+      allow read, update, delete: if isAdmin()
+                  || (isManager() && resource.data.assignedRep == request.auth.uid);
+      allow create: if isAdmin() || isManager();
+    }
+
+    match /calendarEvents/{eventId} {
+      allow read: if isAdmin()
+                  || (isManager() && isAssignedToClient(resource.data.clientId))
+                  || (isTeam() && isAssignedToProject(resource.data.projectId));
+      allow create, update, delete: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId));
+    }
+
+    match /onboardingChecklists/{clientId} {
+      allow read: if isAdmin() || (isManager() && isAssignedToClient(clientId));
+      allow write: if isAdmin() || (isManager() && isAssignedToClient(clientId));
+    }
+
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /reminders/{reminderId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

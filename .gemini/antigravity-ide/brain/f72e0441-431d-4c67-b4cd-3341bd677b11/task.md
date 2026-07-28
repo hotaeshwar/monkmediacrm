@@ -1,0 +1,22 @@
+# Tasks - Monk Media CRM Implementation
+
+- `[x]` Clean TypeScript configuration and setup JS files
+- `[x]` Install npm dependencies (`firebase`, `firebase-admin`, `recharts`, `lucide-react`)
+- `[x]` Configure client Firebase SDK (`src/lib/firebase.js`) and server Firebase Admin SDK (`src/lib/firebaseAdmin.js`)
+- `[x]` Create authentication context (`src/context/AuthContext.jsx`)
+- `[x]` Develop Setup/Bootstrap route (`src/app/setup/page.jsx` & `/api/setup/route.js`)
+- `[x]` Implement portal logins (`/login/admin`, `/login/manager`, `/login/team`)
+- `[x]` Build Admin "Create Team" API route (`/api/admin/create-user`) & Form page (`/admin/team/create/page.jsx`)
+- `[x]` Code responsive, collapsible Sidebar component & Main Layout (white background, sky-blue theme)
+- `[x]` Build Dashboard view (Live Header widgets with weather, live clock, metric cards, trend charts)
+- `[x]` Build CRM Core Modules:
+  - `[x]` Clients (List/Filter + Tabbed profiles)
+  - `[x]` Projects (List + Kanban board)
+  - `[x]` Tasks (List/Kanban/Calendar views)
+  - `[x]` Team (Directory + individual profile task metrics)
+  - `[x]` Leads (Kanban board + convert action)
+- `[x]` Build Finance Module (Invoices, payments, expenses, profit scopes)
+- `[x]` Build Reports, Calendar (+ GCal inputs), and Global Cmd+K Search
+- `[x]` Code Cron Automations (`/api/cron/recurring-invoices`, `/api/cron/check-overdue`)
+- `[x]` Compile security rules (`firestore.rules`, `storage.rules`)
+- `[/]` Build verification and final QA checks

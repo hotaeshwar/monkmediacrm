@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background-color: #FFFFFF !important;
+  color: #348eab; /* Custom Monk Media Blue */
+  min-height: 100%;
+}
+
+/* Elegant premium scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e0f2fe; /* Tailwind sky-100 */
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bae6fd; /* Tailwind sky-200 */
+}
+
+/* Custom visual utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(14, 165, 233, 0.1);
+}

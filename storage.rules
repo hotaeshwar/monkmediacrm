@@ -1,0 +1,21 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Check if user is logged in
+    function loggedIn() {
+      return request.auth != null;
+    }
+
+    // Client asset rules (Logos, contracts, brand manuals)
+    match /clients/{clientId}/{allPaths=**} {
+      allow read: if loggedIn();
+      allow write: if loggedIn();
+    }
+
+    // Team member personal documentation safe (contracts, background checks)
+    match /team/{userId}/{allPaths=**} {
+      allow read, write: if loggedIn() && (request.auth.uid == userId);
+    }
+  }
+}
