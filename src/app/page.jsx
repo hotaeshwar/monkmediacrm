@@ -37,9 +37,9 @@ export default function EntryPage() {
       <div className="w-full max-w-3xl text-center space-y-6">
         
         {/* Branding */}
-        <div className="space-y-2">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-sky-50 text-sky-500 mb-2 border border-sky-100 shadow-sm">
-            <Lock className="w-8 h-8" />
+        <div className="space-y-2 flex flex-col items-center">
+          <div className="mb-4 transform scale-110 hover:scale-115 transition duration-300">
+            <img src="/logonew.png" alt="Monk Media Logo" className="h-28 w-auto object-contain" />
           </div>
           <h1 className="text-4xl font-extrabold text-sky-600 tracking-tight sm:text-5xl">
             Monk Media CRM
