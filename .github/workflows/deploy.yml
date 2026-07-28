@@ -15,6 +15,9 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,7 +33,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Prune API routes and Build
         run: |
