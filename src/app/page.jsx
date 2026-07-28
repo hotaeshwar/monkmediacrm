@@ -39,7 +39,7 @@ export default function EntryPage() {
         {/* Branding */}
         <div className="space-y-2 flex flex-col items-center">
           <div className="mb-4 transform scale-110 hover:scale-115 transition duration-300">
-            <img src="/logonew.png" alt="Monk Media Logo" className="h-28 w-auto object-contain" />
+            <img src="/logonew.png" alt="Monk Media Logo" className="h-36 w-auto object-contain" />
           </div>
           <h1 className="text-4xl font-extrabold text-sky-600 tracking-tight sm:text-5xl">
             Monk Media CRM

@@ -5,6 +5,7 @@ import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Lock, Mail, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 export default function LoginForm({ portalRole, portalName }) {
@@ -58,15 +59,27 @@ export default function LoginForm({ portalRole, portalName }) {
 
       const userRole = userData.role; // 'admin', 'manager', or 'team'
 
-      // 3. Confirm role matches portal
+      // 3. Confirm role matches portal (Ensure admin credentials aren't used elsewhere)
+      if (userRole === "admin" && portalRole !== "admin") {
+        await signOut(auth);
+        const errMsg = "Access Denied: Admin credentials cannot be used on other portals.";
+        setError(errMsg);
+        alert(`Error: ${errMsg}`);
+        setLoading(false);
+        return;
+      }
+
       if (userRole !== portalRole) {
         await signOut(auth);
-        setError(`Access Denied: Wrong portal for this account.`);
+        const errMsg = "Access Denied: Wrong portal for this account.";
+        setError(errMsg);
+        alert(`Error: ${errMsg}`);
         setLoading(false);
         return;
       }
 
       // 4. Redirect to dashboard
+      alert("Success: Login successful! Welcome to your workspace.");
       router.push("/dashboard");
     } catch (err) {
       console.error("Login error:", err);
@@ -79,6 +92,7 @@ export default function LoginForm({ portalRole, portalName }) {
         errMsg = err.message || errMsg;
       }
       setError(errMsg);
+      alert(`Error: ${errMsg}`);
       setLoading(false);
     }
   };
@@ -143,20 +157,29 @@ export default function LoginForm({ portalRole, portalName }) {
           </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-2xl text-xs font-bold transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-              Signing in...
-            </>
-          ) : (
-            "Sign In"
-          )}
-        </button>
+        <div className="space-y-3">
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-2xl text-xs font-bold transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                Signing in...
+              </>
+            ) : (
+              "Sign In"
+            )}
+          </button>
+          
+          <Link
+            href="/"
+            className="w-full py-3 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-2xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 border border-sky-100"
+          >
+            ← Back to Portals
+          </Link>
+        </div>
       </form>
 
       <div className="mt-6 pt-4 border-t border-sky-50 text-center">
