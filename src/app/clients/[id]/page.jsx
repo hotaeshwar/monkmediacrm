@@ -1,8 +1,6 @@
 import ClientProfile from "./ClientProfile";
 
-export async function generateStaticParams() {
-  return [{ id: "temp" }];
-}
+export const dynamic = "force-dynamic";
 
 export default function Page() {
   return <ClientProfile />;
