@@ -43,6 +43,10 @@ service cloud.firestore {
       return isSignedIn() && projectId in assignedProjectIds();
     }
 
+    function isClientSelf(clientId) {
+      return isSignedIn() && role() == 'client' && userDoc().data.clientId == clientId;
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
       allow create: if isSignedIn() && request.auth.uid == userId;
@@ -56,7 +60,8 @@ service cloud.firestore {
     match /clients/{clientId} {
       allow read: if isAdmin()
                   || (isManager() && isAssignedToClient(clientId))
-                  || (isTeam() && isAssignedToClient(clientId));
+                  || (isTeam() && isAssignedToClient(clientId))
+                  || isClientSelf(clientId);
       allow create, update, delete: if isAdmin()
                   || (isManager() && isAssignedToClient(clientId));
     }
@@ -69,21 +74,24 @@ service cloud.firestore {
     match /projects/{projectId} {
       allow read: if isAdmin()
                   || (isManager() && isAssignedToClient(resource.data.clientId))
-                  || (isTeam() && isAssignedToProject(projectId));
+                  || (isTeam() && isAssignedToProject(projectId))
+                  || isClientSelf(resource.data.clientId);
       allow create, update, delete: if isAdmin()
                   || (isManager() && isAssignedToClient(request.resource.data.clientId));
     }
 
     match /invoices/{invoiceId} {
       allow read: if isAdmin()
-                  || (isManager() && isAssignedToClient(resource.data.clientId));
+                  || (isManager() && isAssignedToClient(resource.data.clientId))
+                  || isClientSelf(resource.data.clientId);
       allow create, update, delete: if isAdmin()
                   || (isManager() && isAssignedToClient(request.resource.data.clientId));
     }
 
     match /payments/{paymentId} {
       allow read: if isAdmin()
-                  || (isManager() && isAssignedToClient(resource.data.clientId));
+                  || (isManager() && isAssignedToClient(resource.data.clientId))
+                  || isClientSelf(resource.data.clientId);
       allow create, update, delete: if isAdmin()
                   || (isManager() && isAssignedToClient(request.resource.data.clientId));
     }
@@ -114,7 +122,8 @@ service cloud.firestore {
                   || (isTeam() && (
                         isAssignedToClient(resource.data.clientId)
                         || isAssignedToProject(resource.data.projectId)
-                      ));
+                      ))
+                  || isClientSelf(resource.data.clientId);
       allow create, update, delete: if isAdmin()
                   || (isManager() && isAssignedToClient(request.resource.data.clientId));
     }
@@ -122,9 +131,13 @@ service cloud.firestore {
     match /content/{contentId} {
       allow read: if isAdmin()
                   || (isManager() && isAssignedToClient(resource.data.clientId))
-                  || (isTeam() && isAssignedToClient(resource.data.clientId));
-      allow create, update, delete: if isAdmin()
+                  || (isTeam() && isAssignedToClient(resource.data.clientId))
+                  || isClientSelf(resource.data.clientId);
+      allow create, delete: if isAdmin()
                   || (isManager() && isAssignedToClient(request.resource.data.clientId));
+      allow update: if isAdmin()
+                  || (isManager() && isAssignedToClient(request.resource.data.clientId))
+                  || isClientSelf(resource.data.clientId);
     }
 
     match /leads/{leadId} {
@@ -142,7 +155,7 @@ service cloud.firestore {
     }
 
     match /onboardingChecklists/{clientId} {
-      allow read: if isAdmin() || (isManager() && isAssignedToClient(clientId));
+      allow read: if isAdmin() || (isManager() && isAssignedToClient(clientId)) || isClientSelf(clientId);
       allow write: if isAdmin() || (isManager() && isAssignedToClient(clientId));
     }
 
@@ -157,7 +170,7 @@ service cloud.firestore {
 
     match /passwordResetRequests/{requestId} {
       allow create: if request.resource.data.email is string
-                    && request.resource.data.role in ['manager', 'team']
+                    && request.resource.data.role in ['manager', 'team', 'client']
                     && request.resource.data.status == 'pending'
                     && request.resource.data.createdAt is string;
       allow read, write: if isAdmin();

@@ -20,9 +20,12 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
-    return d.toISOString().split("T")[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [selectedClient, setSelectedClient] = useState("All");
 
   useEffect(() => {
@@ -110,7 +113,7 @@ export default function ReportsPage() {
 
     csv += "FINANCIAL SUMMARY\n";
     csv += `Total Invoiced,Total Collected,Total Outstanding,Net Cash Flow\n`;
-    csv += `$"${totalInvoiced.toFixed(2)}",$"${totalCollected.toFixed(2)}",$"${totalOutstanding.toFixed(2)}",$"${netEarnings.toFixed(2)}"\n\n`;
+    csv += `${totalInvoiced.toFixed(2)},${totalCollected.toFixed(2)},${totalOutstanding.toFixed(2)},${netEarnings.toFixed(2)}\n\n`;
 
     csv += "DETAILED INVOICES\n";
     csv += "Invoice #,Client Name,Date,Status,Total Amount,Amount Paid,Balance Outstanding\n";
@@ -120,7 +123,8 @@ export default function ReportsPage() {
       reportInvoices.forEach((inv) => {
         const clientName = getClientName(inv.clientId).replace(/,/g, " ");
         const invDate = inv.invoiceDate || inv.dueDate;
-        csv += `${inv.invoiceNumber},${clientName},${invDate},${inv.status},$"${(inv.total || 0).toFixed(2)}",$"${(inv.amountPaid || 0).toFixed(2)}",$"${(inv.balance || 0).toFixed(2)}"\n`;
+        const status = inv.status || "Due";
+        csv += `="${inv.invoiceNumber}",${clientName},="${invDate}",${status},${(inv.total || 0).toFixed(2)},${(inv.amountPaid || 0).toFixed(2)},${(inv.balance || 0).toFixed(2)}\n`;
       });
     }
     csv += "\n";
@@ -133,7 +137,7 @@ export default function ReportsPage() {
       reportExpenses.forEach((exp) => {
         const clientName = getClientName(exp.clientId).replace(/,/g, " ");
         const notes = (exp.notes || "").replace(/,/g, " ");
-        csv += `${exp.date},${exp.category},${clientName},${notes},$"${(exp.amount || 0).toFixed(2)}"\n`;
+        csv += `="${exp.date}",${exp.category},${clientName},${notes},${(exp.amount || 0).toFixed(2)}\n`;
       });
     }
 
@@ -588,7 +592,17 @@ export default function ReportsPage() {
                             <td className="p-3 px-4 font-bold">{inv.invoiceNumber}</td>
                             <td className="p-3 px-4 truncate max-w-[120px]">{getClientName(inv.clientId)}</td>
                             <td className="p-3 px-4">{inv.invoiceDate || inv.dueDate}</td>
-                            <td className="p-3 px-4 text-center">{inv.status}</td>
+                            <td className="p-3 px-4 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                (inv.status || "Due") === "Received" || (inv.status || "Due") === "Paid"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : (inv.status || "Due") === "Partial"
+                                  ? "bg-sky-100 text-sky-700"
+                                  : "bg-amber-100 text-amber-700"
+                              }`}>
+                                {inv.status || "Due"}
+                              </span>
+                            </td>
                             <td className="p-3 px-4 text-right font-bold">${Number(inv.total).toLocaleString()}</td>
                           </tr>
                         ))

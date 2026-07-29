@@ -62,19 +62,26 @@ export async function POST(request) {
     const parsedRate = Number(rate) || 0;
     const clientList = Array.isArray(assignedClients) ? assignedClients : [];
 
-    await adminDb.collection("users").doc(newUserUid).set({
+    const userDocPayload = {
       name,
       email,
-      role, // 'manager' or 'team'
+      role,
       phone: phone || "",
-      employmentType: employmentType || "Contractor",
-      paymentModel: paymentModel || "Hourly",
-      rate: parsedRate,
-      assignedClients: clientList,
-      assignedProjects: [],
       status: "active",
       createdAt: new Date().toISOString()
-    });
+    };
+
+    if (role === "client") {
+      userDocPayload.clientId = clientList[0] || "";
+    } else {
+      userDocPayload.employmentType = employmentType || "Contractor";
+      userDocPayload.paymentModel = paymentModel || "Hourly";
+      userDocPayload.rate = parsedRate;
+      userDocPayload.assignedClients = clientList;
+      userDocPayload.assignedProjects = [];
+    }
+
+    await adminDb.collection("users").doc(newUserUid).set(userDocPayload);
 
     return NextResponse.json({
       success: true,

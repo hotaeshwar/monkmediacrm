@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { Lock, Sparkles, UserCheck, ShieldCheck, Users } from "lucide-react";
+import { Lock, Sparkles, UserCheck, ShieldCheck, Users, User } from "lucide-react";
 
 export const metadata = {
   title: "Monk Media CRM - Workspace Access",
@@ -30,6 +30,13 @@ export default function EntryPage() {
       color: "bg-sky-300",
       icon: Users,
     },
+    {
+      name: "Client Portal",
+      desc: "Access for clients to view projects, invoices, content plans, and documents created for them.",
+      href: "/login/client",
+      color: "bg-sky-200",
+      icon: User,
+    },
   ];
 
   return (
@@ -50,7 +57,7 @@ export default function EntryPage() {
         </div>
 
         {/* Portal Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 pt-6">
           {portals.map((portal) => {
             let glowGradient = "from-sky-400/20 to-indigo-500/20 group-hover:from-sky-500/40 group-hover:to-indigo-600/40";
             if (portal.name.includes("Administrator")) {
@@ -59,6 +66,8 @@ export default function EntryPage() {
               glowGradient = "from-sky-400/25 to-cyan-400/25 group-hover:from-sky-500/45 group-hover:to-cyan-500/45";
             } else if (portal.name.includes("Team Member")) {
               glowGradient = "from-sky-300/25 to-emerald-400/25 group-hover:from-sky-400/45 group-hover:to-emerald-500/45";
+            } else if (portal.name.includes("Client")) {
+              glowGradient = "from-sky-200/25 to-blue-300/25 group-hover:from-sky-300/45 group-hover:to-blue-400/45";
             }
 
             return (

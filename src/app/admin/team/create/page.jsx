@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { auth, db } from "@/lib/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, addDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import { KeyRound, ShieldAlert, UserCheck, Plus, Check, Copy } from "lucide-react";
+import { KeyRound, ShieldAlert, UserCheck, Plus, Check, Copy, Key } from "lucide-react";
 
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -28,6 +28,11 @@ export default function CreateTeamPage() {
   const [rate, setRate] = useState("");
   const [selectedClients, setSelectedClients] = useState([]);
 
+  // Client Selection / Provisioning States
+  const [clientSelectionMode, setClientSelectionMode] = useState("existing"); // 'existing' or 'new'
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [newClientBusinessName, setNewClientBusinessName] = useState("");
+
   // Data
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -38,7 +43,7 @@ export default function CreateTeamPage() {
 
   const handleWhatsAppShare = (email, password, roleVal, customPhoneNum) => {
     const cleanPhone = customPhoneNum ? customPhoneNum.replace(/[^0-9]/g, "") : "";
-    const portalPath = roleVal === "manager" ? "manager" : "team";
+    const portalPath = roleVal === "manager" ? "manager" : roleVal === "client" ? "client" : "team";
     const text = `Hi! Here are your login credentials for the Monk Media Portal:
 
 Email: ${email}
@@ -100,6 +105,82 @@ Please keep these credentials secure.`;
         throw new Error("You must be logged in as an Administrator.");
       }
 
+      let targetClients = selectedClients;
+
+      if (userRole === "client") {
+        if (clientSelectionMode === "new") {
+          if (!newClientBusinessName.trim()) {
+            throw new Error("Please specify the Client's Business Name.");
+          }
+
+          const onboardingDate = new Date().toISOString().split("T")[0];
+          const start = new Date(onboardingDate + "T12:00:00");
+          const nextMonth = new Date(start.getFullYear(), start.getMonth() + 1, start.getDate());
+          const nextPaymentDateStr = nextMonth.toISOString().split("T")[0];
+          const dueDateStr = String(start.getDate());
+
+          const clientPayload = {
+            businessName: newClientBusinessName.trim(),
+            legalName: newClientBusinessName.trim(),
+            contactPerson: name,
+            phone: phone || "",
+            email: email || "",
+            secondaryContact: "",
+            website: "",
+            address: "",
+            city: "",
+            province: "",
+            postalCode: "",
+            industry: "Other",
+            status: "Active onboarding",
+            dateJoined: onboardingDate,
+            accountManager: currentUser?.uid,
+            leadSource: "Direct",
+            notes: "Client profile created automatically during client login provisioning.",
+            logoUrl: "",
+            logoTransparentUrl: "",
+            services: [],
+            deliverables: "",
+            accountLinks: [],
+            assignedTeam: [],
+            financials: {
+              monthlyRetainer: 0,
+              oneTimeProjectValue: 0,
+              paymentFrequency: "Monthly",
+              dueDate: dueDateStr,
+              contractStart: onboardingDate,
+              contractEnd: "",
+              taxRate: 13,
+              gstNumber: "",
+              billingEmail: email || "",
+              paymentMethod: "Credit Card",
+              depositRequired: false,
+              depositReceived: 0,
+              totalPaid: 0,
+              totalOutstanding: 0,
+              nextPaymentDate: nextPaymentDateStr,
+              lastPaymentDate: "",
+            },
+          };
+
+          const docRef = await addDoc(collection(db, "clients"), clientPayload);
+          targetClients = [docRef.id];
+
+          // Dynamically refresh clients list
+          const snap = await getDocs(collection(db, "clients"));
+          const list = [];
+          snap.forEach((doc) => {
+            list.push({ id: doc.id, businessName: doc.data().businessName });
+          });
+          setClients(list);
+        } else {
+          if (!selectedClientId) {
+            throw new Error("Please select an existing client for this user.");
+          }
+          targetClients = [selectedClientId];
+        }
+      }
+
       // Get current logged in user ID token
       const idToken = await auth.currentUser.getIdToken();
 
@@ -115,10 +196,10 @@ Please keep these credentials secure.`;
           password,
           role: userRole,
           phone,
-          employmentType,
-          paymentModel,
-          rate,
-          assignedClients: selectedClients,
+          employmentType: userRole === "client" ? "Contractor" : employmentType,
+          paymentModel: userRole === "client" ? "Hourly" : paymentModel,
+          rate: userRole === "client" ? 0 : rate,
+          assignedClients: targetClients,
         }),
       });
 
@@ -136,6 +217,8 @@ Please keep these credentials secure.`;
       setPhone("");
       setRate("");
       setSelectedClients([]);
+      setNewClientBusinessName("");
+      setSelectedClientId("");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -145,9 +228,10 @@ Please keep these credentials secure.`;
 
   const handleCopy = () => {
     if (!successData) return;
+    const portalPath = successData.role === "manager" ? "manager" : successData.role === "client" ? "client" : "team";
     const txt = `Email: ${successData.email}\nPassword: ${successData.password}\nPortal Link: ${
       window.location.origin
-    }/login/${successData.role === "manager" ? "manager" : "team"}`;
+    }/login/${portalPath}`;
     navigator.clipboard.writeText(txt);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -182,9 +266,9 @@ Please keep these credentials secure.`;
         
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-sky-600">Create Team Member</h1>
+          <h1 className="text-3xl font-bold text-sky-600">Create Account / Portal</h1>
           <p className="text-xs text-sky-400 uppercase tracking-widest font-bold mt-1">
-            Provision Manager & Contractor Portals
+            Provision Manager, Contractor & Client Portals
           </p>
         </div>
 
@@ -204,7 +288,7 @@ Please keep these credentials secure.`;
                     <div><span className="font-bold">Password:</span> {successData.password}</div>
                     <div>
                       <span className="font-bold">Portal:</span>{" "}
-                      {successData.role === "manager" ? "/login/manager" : "/login/team"}
+                      {successData.role === "manager" ? "/login/manager" : successData.role === "client" ? "/login/client" : "/login/team"}
                     </div>
                   </div>
                 </div>
@@ -319,108 +403,197 @@ Please keep these credentials secure.`;
                 >
                   <option value="team">Team Member / Contractor</option>
                   <option value="manager">Account Manager</option>
+                  <option value="client">Client Portal</option>
                 </select>
               </div>
             </div>
 
             {/* Right Column */}
             <div className="space-y-4">
-              <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-2">
-                Employment & Financial Profile
-              </h3>
+              {userRole === "client" ? (
+                <>
+                  <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-2">
+                    Client Association
+                  </h3>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                  Phone Number
-                </label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="e.g. +1 (555) 019-2834"
-                  className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 placeholder-sky-300 outline-none transition-all duration-200"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-2">
+                      Client Linking Mode
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:gap-6">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-sky-600 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="clientSelectionMode"
+                          value="existing"
+                          checked={clientSelectionMode === "existing"}
+                          onChange={() => setClientSelectionMode("existing")}
+                          className="text-sky-500 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                        />
+                        Link to Existing Client
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-sky-600 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="clientSelectionMode"
+                          value="new"
+                          checked={clientSelectionMode === "new"}
+                          onChange={() => setClientSelectionMode("new")}
+                          className="text-sky-500 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                        />
+                        Create a New Client
+                      </label>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                    Employment
-                  </label>
-                  <select
-                    value={employmentType}
-                    onChange={(e) => setEmploymentType(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
-                  >
-                    <option value="Full-Time">Full-Time</option>
-                    <option value="Part-Time">Part-Time</option>
-                    <option value="Contractor">Contractor</option>
-                  </select>
-                </div>
+                  {clientSelectionMode === "existing" ? (
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                        Select Existing Client
+                      </label>
+                      <select
+                        value={selectedClientId}
+                        onChange={(e) => setSelectedClientId(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
+                      >
+                        <option value="">-- Choose Client --</option>
+                        {clients.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.businessName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                        Client Business Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newClientBusinessName}
+                        onChange={(e) => setNewClientBusinessName(e.target.value)}
+                        placeholder="e.g. Metric Air Limited"
+                        className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 placeholder-sky-300 outline-none transition-all duration-200"
+                      />
+                    </div>
+                  )}
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                    Payment Model
-                  </label>
-                  <select
-                    value={paymentModel}
-                    onChange={(e) => setPaymentModel(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
-                  >
-                    <option value="Salary">Salary</option>
-                    <option value="Hourly">Hourly</option>
-                    <option value="Retainer">Retainer</option>
-                  </select>
-                </div>
-              </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Client Contact Phone (for sharing details)
+                    </label>
+                    <input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. +1 (555) 019-2834"
+                      className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 placeholder-sky-300 outline-none transition-all duration-200"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-2">
+                    Employment & Financial Profile
+                  </h3>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                  Compensation Rate ($)
-                </label>
-                <input
-                  type="number"
-                  value={rate}
-                  onChange={(e) => setRate(e.target.value)}
-                  placeholder="e.g. 50 (hourly rate or monthly salary)"
-                  className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 placeholder-sky-300 outline-none transition-all duration-200"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Phone Number
+                    </label>
+                    <input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. +1 (555) 019-2834"
+                      className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 placeholder-sky-300 outline-none transition-all duration-200"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                        Employment
+                      </label>
+                      <select
+                        value={employmentType}
+                        onChange={(e) => setEmploymentType(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
+                      >
+                        <option value="Full-Time">Full-Time</option>
+                        <option value="Part-Time">Part-Time</option>
+                        <option value="Contractor">Contractor</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                        Payment Model
+                      </label>
+                      <select
+                        value={paymentModel}
+                        onChange={(e) => setPaymentModel(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
+                      >
+                        <option value="Salary">Salary</option>
+                        <option value="Hourly">Hourly</option>
+                        <option value="Retainer">Retainer</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Compensation Rate ($)
+                    </label>
+                    <input
+                      type="number"
+                      value={rate}
+                      onChange={(e) => setRate(e.target.value)}
+                      placeholder="e.g. 50 (hourly rate or monthly salary)"
+                      className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 placeholder-sky-300 outline-none transition-all duration-200"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Client Multi-select Area */}
-          <div className="pt-4 border-t border-sky-50">
-            <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-3">
-              Assign Scoped Clients
-            </h3>
-            {clients.length === 0 ? (
-              <p className="text-xs text-sky-400">
-                No clients exist in the database. You can assign clients to this user later.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {clients.map((c) => {
-                  const isChecked = selectedClients.includes(c.id);
-                  return (
-                    <button
-                      type="button"
-                      key={c.id}
-                      onClick={() => handleClientToggle(c.id)}
-                      className={`p-3 rounded-2xl text-left border text-xs font-semibold transition-all duration-200 flex items-center justify-between ${
-                        isChecked
-                          ? "bg-sky-50 border-sky-200 text-sky-600"
-                          : "bg-white border-sky-100 text-sky-500 hover:bg-sky-50/20"
-                      }`}
-                    >
-                      <span className="truncate pr-2">{c.businessName}</span>
-                      {isChecked && <Plus className="w-3.5 h-3.5 text-sky-600 flex-shrink-0 transform rotate-45" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {userRole !== "client" && (
+            <div className="pt-4 border-t border-sky-50">
+              <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-3">
+                Assign Scoped Clients
+              </h3>
+              {clients.length === 0 ? (
+                <p className="text-xs text-sky-400">
+                  No clients exist in the database. You can assign clients to this user later.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {clients.map((c) => {
+                    const isChecked = selectedClients.includes(c.id);
+                    return (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => handleClientToggle(c.id)}
+                        className={`p-3 rounded-2xl text-left border text-xs font-semibold transition-all duration-200 flex items-center justify-between ${
+                          isChecked
+                            ? "bg-sky-50 border-sky-200 text-sky-600"
+                            : "bg-white border-sky-100 text-sky-500 hover:bg-sky-50/20"
+                        }`}
+                      >
+                        <span className="truncate pr-2">{c.businessName}</span>
+                        {isChecked && <Plus className="w-3.5 h-3.5 text-sky-600 flex-shrink-0 transform rotate-45" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Submit Button */}
           <div className="flex justify-end pt-4 border-t border-sky-50">
@@ -429,7 +602,7 @@ Please keep these credentials secure.`;
               disabled={loading}
               className="px-6 py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-2xl text-xs font-bold transition-all duration-200 shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Creating Member..." : "Create Team Member"}
+              {loading ? (userRole === "client" ? "Creating Client Account..." : "Creating Member...") : (userRole === "client" ? "Create Client Account" : "Create Team Member")}
             </button>
           </div>
         </form>

@@ -6,23 +6,79 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { Bell, X, Clock, Trash2, Volume2, AlertCircle, Sparkles } from "lucide-react";
 
+// Normalizes YYYY-MM-DD and DD-MM-YYYY formats to YYYY-MM-DD string format
+const normalizeToYmd = (dateStr) => {
+  if (!dateStr) return "";
+  const cleaned = String(dateStr).trim();
+  if (cleaned.indexOf("-") === 4) {
+    return cleaned; // Already YYYY-MM-DD
+  }
+  if (cleaned.indexOf("-") === 2) {
+    const parts = cleaned.split("-");
+    return `${parts[2]}-${parts[1]}-${parts[0]}`; // Convert DD-MM-YYYY to YYYY-MM-DD
+  }
+  if (cleaned.indexOf("/") === 4) {
+    return cleaned.replace(/\//g, "-"); // Convert YYYY/MM/DD to YYYY-MM-DD
+  }
+  if (cleaned.indexOf("/") === 2) {
+    const parts = cleaned.split("/");
+    return `${parts[2]}-${parts[1]}-${parts[0]}`; // Convert DD/MM/YYYY to YYYY-MM-DD
+  }
+  return cleaned;
+};
+
+// Memoized global AudioContext to bypass browser autoplay blocks on subsequent calls
+let globalAudioCtx = null;
+const getAudioContext = () => {
+  if (typeof window === "undefined") return null;
+  const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtxClass) return null;
+  if (!globalAudioCtx) {
+    globalAudioCtx = new AudioCtxClass();
+  }
+  return globalAudioCtx;
+};
+
 export default function GlobalReminders() {
-  const { currentUser } = useAuth();
+  const { currentUser, role } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [activeAlarm, setActiveAlarm] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [dismissedTaskAlarms, setDismissedTaskAlarms] = useState([]);
+  
+  const [invoices, setInvoices] = useState([]);
+  const [dismissedInvoiceAlarms, setDismissedInvoiceAlarms] = useState([]);
 
-  // Load dismissed alarms on mount
+  // Clear dismissed alarms on mount (page refresh) so reminders come properly
   useEffect(() => {
+    setDismissedTaskAlarms([]);
+    setDismissedInvoiceAlarms([]);
     try {
-      const stored = localStorage.getItem("dismissed_task_alarms");
-      if (stored) {
-        setDismissedTaskAlarms(JSON.parse(stored));
-      }
+      localStorage.removeItem("dismissed_task_alarms");
+      localStorage.removeItem("dismissed_invoice_alarms");
     } catch (e) {
       console.error(e);
     }
+  }, []);
+
+  // Web Audio Context Autoplay Policy Unlock
+  useEffect(() => {
+    const resumeAudio = () => {
+      try {
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === "suspended") {
+          ctx.resume();
+        }
+      } catch (e) {
+        console.warn("Audio Context unlock error:", e);
+      }
+    };
+    window.addEventListener("click", resumeAudio, { once: true });
+    window.addEventListener("touchstart", resumeAudio, { once: true });
+    return () => {
+      window.removeEventListener("click", resumeAudio);
+      window.removeEventListener("touchstart", resumeAudio);
+    };
   }, []);
 
   // Fetch tasks for active user
@@ -42,20 +98,53 @@ export default function GlobalReminders() {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // Filter for active overdue/due today tasks
+  // Fetch invoices for admin/manager
+  useEffect(() => {
+    if (!currentUser || (role !== "admin" && role !== "manager")) return;
+    const unsubscribe = onSnapshot(collection(db, "invoices"), (snapshot) => {
+      const list = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      setInvoices(list);
+    });
+    return () => unsubscribe();
+  }, [currentUser, role]);
+
+  // Filter for active overdue/due today tasks using timezone-safe local date string
   const getOverdueTasks = () => {
-    const todayStr = new Date().toISOString().split("T")[0];
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     return tasks.filter((t) => {
       const isPending = t.status !== "Completed" && t.status !== "Cancelled";
-      const hasPassedDeadline = t.dueDate && t.dueDate <= todayStr;
-      return isPending && hasPassedDeadline;
+      if (!isPending || !t.dueDate) return false;
+      const taskDueDateYmd = normalizeToYmd(t.dueDate);
+      return taskDueDateYmd && taskDueDateYmd <= todayStr;
+    });
+  };
+
+  // Filter for overdue invoices using timezone-safe local date string
+  const getOverdueInvoices = () => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return invoices.filter((inv) => {
+      const status = inv.status || "Due";
+      const isUnpaid = status !== "Received" && status !== "Paid";
+      if (!isUnpaid || !inv.dueDate) return false;
+      const invDueDateYmd = normalizeToYmd(inv.dueDate);
+      return invDueDateYmd && invDueDateYmd < todayStr;
     });
   };
 
   const overdueTasks = getOverdueTasks();
   const activeOverdueAlarms = overdueTasks.filter((t) => !dismissedTaskAlarms.includes(t.id));
 
-  // Monitor trigger times (Automatic Task Pendencies only)
+  const overdueInvoices = getOverdueInvoices();
+  const activeOverdueInvoiceAlarms = overdueInvoices.filter((inv) => !dismissedInvoiceAlarms.includes(inv.id));
+
+  const totalOverdueCount = activeOverdueAlarms.length + activeOverdueInvoiceAlarms.length;
+
+  // Monitor trigger times (Automatic Task & Invoice Alarms)
   useEffect(() => {
     const interval = setInterval(() => {
       if (activeAlarm) return;
@@ -70,20 +159,38 @@ export default function GlobalReminders() {
           triggerTime: pendingTask.dueDate,
           notes: `Task "${pendingTask.name}" has an active pendency state (Not Completed or Cancelled) and its deadline of ${pendingTask.dueDate} is reached or passed.`
         });
+      } else if (activeOverdueInvoiceAlarms.length > 0) {
+        const pendingInvoice = activeOverdueInvoiceAlarms[0];
+        setActiveAlarm({
+          id: `invoice-alarm-${pendingInvoice.id}`,
+          isInvoice: true,
+          invoiceId: pendingInvoice.id,
+          title: `Collection Alarm: Invoice Overdue!`,
+          triggerTime: pendingInvoice.dueDate,
+          notes: `Invoice #${pendingInvoice.invoiceNumber} for client "${pendingInvoice.clientName || 'General'}" has an outstanding balance of $${Number(pendingInvoice.balance).toLocaleString()} and exceeded its due date of ${pendingInvoice.dueDate}.`
+        });
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeOverdueAlarms, activeAlarm]);
+  }, [activeOverdueAlarms, activeOverdueInvoiceAlarms, activeAlarm]);
 
-  // Web Audio Alarm Chime Loop
+  // Web Audio Alarm Chime Loop wrapped in safety handlers
   useEffect(() => {
     let chimeInterval = null;
     if (activeAlarm) {
-      playChimeTune();
-      chimeInterval = setInterval(() => {
+      try {
         playChimeTune();
-      }, 2500);
+        chimeInterval = setInterval(() => {
+          try {
+            playChimeTune();
+          } catch (e) {
+            console.warn("Chime loop playback failed:", e);
+          }
+        }, 2500);
+      } catch (err) {
+        console.warn("Chime start playback failed:", err);
+      }
     }
     return () => {
       if (chimeInterval) {
@@ -94,7 +201,11 @@ export default function GlobalReminders() {
 
   const playChimeTune = () => {
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioCtx = getAudioContext();
+      if (!audioCtx) return;
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
       const playTone = (time, pitch, dur) => {
         const osc = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
@@ -131,9 +242,20 @@ export default function GlobalReminders() {
     }
   };
 
+  const handleDismissInvoice = (invoiceId) => {
+    const nextDismissed = [...dismissedInvoiceAlarms, invoiceId];
+    setDismissedInvoiceAlarms(nextDismissed);
+    localStorage.setItem("dismissed_invoice_alarms", JSON.stringify(nextDismissed));
+    if (activeAlarm && activeAlarm.invoiceId === invoiceId) {
+      setActiveAlarm(null);
+    }
+  };
+
   const handleClearDismissed = () => {
     setDismissedTaskAlarms([]);
+    setDismissedInvoiceAlarms([]);
     localStorage.removeItem("dismissed_task_alarms");
+    localStorage.removeItem("dismissed_invoice_alarms");
   };
 
   if (!currentUser) return null;
@@ -148,9 +270,12 @@ export default function GlobalReminders() {
       >
         <div className="relative">
           <Bell className="w-5 h-5 group-hover:animate-bounce" />
-          {activeOverdueAlarms.length > 0 && (
-            <span className="absolute -top-2.5 -right-2.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white ring-2 ring-white animate-pulse">
-              {activeOverdueAlarms.length}
+          {totalOverdueCount > 0 && (
+            <span className="absolute -top-3.5 -right-3.5 flex flex-col items-center justify-center rounded-2xl bg-red-500 text-[8px] font-black text-white px-2 py-1 ring-2 ring-white shadow-lg animate-pulse whitespace-nowrap leading-none min-w-[28px]">
+              <div>{totalOverdueCount}</div>
+              <div className="text-[6px] font-medium scale-90 mt-0.5 opacity-90">
+                {activeOverdueAlarms.length}T / {activeOverdueInvoiceAlarms.length}I
+              </div>
             </span>
           )}
         </div>
@@ -165,7 +290,7 @@ export default function GlobalReminders() {
               <div className="flex items-center justify-between pb-4 border-b border-sky-50 mb-5">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-5 h-5 text-red-500" />
-                  <h3 className="font-bold text-sky-600">Pending Tasks Alerts</h3>
+                  <h3 className="font-bold text-sky-600">Pending CRM Alerts</h3>
                 </div>
                 <button
                   onClick={() => setIsOpen(false)}
@@ -176,62 +301,122 @@ export default function GlobalReminders() {
               </div>
 
               {/* Overdue Alerts Pool */}
-              <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
-                <div className="flex justify-between items-center">
-                  <h4 className="text-[10px] uppercase tracking-widest font-black text-sky-400">
-                    Overdue Work Items ({overdueTasks.length})
-                  </h4>
-                  {dismissedTaskAlarms.length > 0 && (
-                    <button
-                      onClick={handleClearDismissed}
-                      className="text-[9px] text-sky-500 hover:text-sky-600 font-bold transition"
-                    >
-                      Reset Silenced
-                    </button>
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-[10px] uppercase tracking-widest font-black text-sky-400">
+                      Overdue Work Items ({overdueTasks.length})
+                    </h4>
+                    {(dismissedTaskAlarms.length > 0 || dismissedInvoiceAlarms.length > 0) && (
+                      <button
+                        onClick={handleClearDismissed}
+                        className="text-[9px] text-sky-500 hover:text-sky-600 font-bold transition"
+                      >
+                        Reset Silenced
+                      </button>
+                    )}
+                  </div>
+
+                  {overdueTasks.length === 0 ? (
+                    <div className="text-center py-10 bg-sky-50/20 border border-sky-100/50 rounded-2xl p-4">
+                      <Sparkles className="w-6 h-6 text-sky-400 mx-auto mb-2" />
+                      <p className="text-xs text-sky-500 font-bold">All caught up!</p>
+                      <p className="text-[10px] text-sky-400 mt-1">No active pending tasks past their deadline.</p>
+                    </div>
+                  ) : (
+                    overdueTasks.map((t) => {
+                      const isSilenced = dismissedTaskAlarms.includes(t.id);
+                      return (
+                        <div
+                          key={t.id}
+                          className={`p-3.5 border rounded-2xl transition-all shadow-xs space-y-2 ${
+                            isSilenced 
+                              ? "bg-slate-50 border-slate-200 opacity-60" 
+                              : "bg-red-50/30 border-red-100"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <p className="text-xs font-bold text-sky-600 leading-snug">{t.name}</p>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] bg-red-100 text-red-600 font-black uppercase">
+                              Overdue
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-[9px] text-sky-400 font-bold">
+                            <span>Deadline: {t.dueDate}</span>
+                            <button
+                              onClick={() => handleDismissTask(t.id)}
+                              disabled={isSilenced}
+                              className={`px-2 py-0.5 rounded border transition-colors ${
+                                isSilenced
+                                  ? "bg-slate-100 text-slate-400 border-slate-200"
+                                  : "bg-white border-red-200 text-red-500 hover:bg-red-50"
+                              }`}
+                            >
+                              {isSilenced ? "Silenced" : "Silence Alarm"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
 
-                {overdueTasks.length === 0 ? (
-                  <div className="text-center py-10 bg-sky-50/20 border border-sky-100/50 rounded-2xl p-4">
-                    <Sparkles className="w-6 h-6 text-sky-400 mx-auto mb-2" />
-                    <p className="text-xs text-sky-500 font-bold">All caught up!</p>
-                    <p className="text-[10px] text-sky-400 mt-1">No active pending tasks past their deadline.</p>
-                  </div>
-                ) : (
-                  overdueTasks.map((t) => {
-                    const isSilenced = dismissedTaskAlarms.includes(t.id);
-                    return (
-                      <div
-                        key={t.id}
-                        className={`p-3.5 border rounded-2xl transition-all shadow-xs space-y-2 ${
-                          isSilenced 
-                            ? "bg-slate-50 border-slate-200 opacity-60" 
-                            : "bg-red-50/30 border-red-100"
-                        }`}
-                      >
-                        <div className="flex justify-between items-start gap-2">
-                          <p className="text-xs font-bold text-sky-600 leading-snug">{t.name}</p>
-                          <span className="px-1.5 py-0.5 rounded text-[8px] bg-red-100 text-red-600 font-black uppercase">
-                            Overdue
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-[9px] text-sky-400 font-bold">
-                          <span>Deadline: {t.dueDate}</span>
-                          <button
-                            onClick={() => handleDismissTask(t.id)}
-                            disabled={isSilenced}
-                            className={`px-2 py-0.5 rounded border transition-colors ${
-                              isSilenced
-                                ? "bg-slate-100 text-slate-400 border-slate-200"
-                                : "bg-white border-red-200 text-red-500 hover:bg-red-50"
+                {/* Overdue Invoices / Retainers Section */}
+                {(role === "admin" || role === "manager") && (
+                  <div className="pt-4 border-t border-sky-100/50 space-y-3">
+                    <h4 className="text-[10px] uppercase tracking-widest font-black text-sky-400">
+                      Overdue Invoices / Retainers ({overdueInvoices.length})
+                    </h4>
+                    {overdueInvoices.length === 0 ? (
+                      <div className="text-center py-10 bg-sky-50/20 border border-sky-100/50 rounded-2xl p-4">
+                        <Sparkles className="w-6 h-6 text-sky-400 mx-auto mb-2" />
+                        <p className="text-xs text-sky-500 font-bold">All payments collected!</p>
+                        <p className="text-[10px] text-sky-400 mt-1">No outstanding invoices past their due date.</p>
+                      </div>
+                    ) : (
+                      overdueInvoices.map((inv) => {
+                        const isSilenced = dismissedInvoiceAlarms.includes(inv.id);
+                        return (
+                          <div
+                            key={inv.id}
+                            className={`p-3.5 border rounded-2xl transition-all shadow-xs space-y-2 ${
+                              isSilenced 
+                                ? "bg-slate-50 border-slate-200 opacity-60" 
+                                : "bg-red-50/30 border-red-100"
                             }`}
                           >
-                            {isSilenced ? "Silenced" : "Silence Alarm"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="space-y-0.5">
+                                <p className="text-xs font-bold text-sky-600 leading-snug">
+                                  Invoice #{inv.invoiceNumber}
+                                </p>
+                                <p className="text-[10px] text-sky-500 font-bold">
+                                  {inv.clientName}
+                                </p>
+                              </div>
+                              <span className="px-1.5 py-0.5 rounded text-[8px] bg-red-100 text-red-600 font-black uppercase">
+                                Overdue (${Number(inv.balance || 0).toLocaleString()})
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-[9px] text-sky-400 font-bold">
+                              <span>Due Date: {inv.dueDate}</span>
+                              <button
+                                onClick={() => handleDismissInvoice(inv.id)}
+                                disabled={isSilenced}
+                                className={`px-2 py-0.5 rounded border transition-colors ${
+                                  isSilenced
+                                    ? "bg-slate-100 text-slate-400 border-slate-200"
+                                    : "bg-white border-red-200 text-red-500 hover:bg-red-50"
+                                }`}
+                              >
+                                {isSilenced ? "Silenced" : "Silence Alarm"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -276,7 +461,13 @@ export default function GlobalReminders() {
             {/* Cancel/Dismiss Controls */}
             <div className="pt-2 flex flex-col gap-2">
               <button
-                onClick={() => handleDismissTask(activeAlarm.taskId)}
+                onClick={() => {
+                  if (activeAlarm.isTask) {
+                    handleDismissTask(activeAlarm.taskId);
+                  } else if (activeAlarm.isInvoice) {
+                    handleDismissInvoice(activeAlarm.invoiceId);
+                  }
+                }}
                 className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-2xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1.5"
               >
                 <Volume2 className="w-4 h-4" /> Silence & Dismiss Alert

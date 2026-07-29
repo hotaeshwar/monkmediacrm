@@ -8,6 +8,7 @@ import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 const AuthContext = createContext({
   currentUser: null,
   role: null,
+  clientId: null,
   loading: true,
   logout: async () => {},
 });
@@ -15,6 +16,7 @@ const AuthContext = createContext({
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [role, setRole] = useState(null);
+  const [clientId, setClientId] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,6 +31,7 @@ export const AuthProvider = ({ children }) => {
         unsubProfile = onSnapshot(userDocRef, async (docSnap) => {
           if (docSnap.exists()) {
             setRole(docSnap.data().role);
+            setClientId(docSnap.data().clientId || null);
             setLoading(false);
           } else {
             console.warn("No Firestore profile document was found for this user. Provisioning one...");
@@ -38,6 +41,7 @@ export const AuthProvider = ({ children }) => {
               const path = window.location.pathname;
               if (path.includes("/login/manager")) defaultRole = "manager";
               else if (path.includes("/login/team")) defaultRole = "team";
+              else if (path.includes("/login/client")) defaultRole = "client";
             }
 
             const defaultName = user.email.split("@")[0]
@@ -77,6 +81,7 @@ export const AuthProvider = ({ children }) => {
       } else {
         setCurrentUser(null);
         setRole(null);
+        setClientId(null);
         setLoading(false);
       }
     });
@@ -96,12 +101,13 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setCurrentUser(null);
       setRole(null);
+      setClientId(null);
       setLoading(false);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, role, loading, logout }}>
+    <AuthContext.Provider value={{ currentUser, role, clientId, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );

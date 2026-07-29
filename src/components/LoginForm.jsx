@@ -68,6 +68,15 @@ export default function LoginForm({ portalRole, portalName }) {
       let userData;
 
       if (!userDoc.exists()) {
+        if (portalRole === "client") {
+          await signOut(auth);
+          const errMsg = "Access Denied: Client profile not found. Please contact the system administrator.";
+          setError(errMsg);
+          alert(`Error: ${errMsg}`);
+          setLoading(false);
+          return;
+        }
+
         const defaultName = email.split("@")[0]
           .replace(/[^a-zA-Z]/g, " ")
           .split(" ")
@@ -93,7 +102,7 @@ export default function LoginForm({ portalRole, portalName }) {
         userData = userDoc.data();
       }
 
-      const userRole = userData.role; // 'admin', 'manager', or 'team'
+      const userRole = userData.role; // 'admin', 'manager', 'team', or 'client'
 
       // 3. Confirm role matches portal (Ensure admin credentials aren't used elsewhere)
       if (userRole === "admin" && portalRole !== "admin") {
@@ -114,9 +123,13 @@ export default function LoginForm({ portalRole, portalName }) {
         return;
       }
 
-      // 4. Redirect to dashboard
+      // 4. Redirect to dashboard or client profile
       alert("Success: Login successful! Welcome to your workspace.");
-      router.push("/dashboard");
+      if (userRole === "client") {
+        router.push(`/clients/profile?id=${userData.clientId}`);
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err) {
       console.error("Login error:", err);
       let errMsg = "Invalid email or password.";

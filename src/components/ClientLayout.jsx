@@ -1,12 +1,49 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AuthProvider } from "@/context/AuthContext";
-import { usePathname } from "next/navigation";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { usePathname, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
 import GlobalReminders from "@/components/GlobalReminders";
 import GlobalPayments from "@/components/GlobalPayments";
+
+function RouteGuard({ children }) {
+  const { currentUser, role, clientId, loading } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+
+    const isAuthPath = pathname === "/" || pathname?.startsWith("/login") || pathname?.startsWith("/setup");
+    
+    if (!currentUser && !isAuthPath) {
+      router.push("/");
+      return;
+    }
+
+    if (currentUser && role === "client") {
+      if (pathname !== "/clients/profile") {
+        if (clientId) {
+          router.push(`/clients/profile?id=${clientId}`);
+        } else {
+          console.error("Missing clientId for client role user");
+        }
+      }
+    }
+  }, [currentUser, role, clientId, loading, pathname, router]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8 bg-white min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+      </div>
+    );
+  }
+
+  return children;
+}
 
 export default function ClientLayout({ children }) {
   const pathname = usePathname();
@@ -148,7 +185,7 @@ export default function ClientLayout({ children }) {
             isAuthPage ? "" : `pt-16 lg:pt-0 ${sidebarExpanded ? "lg:pl-64" : "lg:pl-20"}`
           }`}
         >
-          {children}
+          <RouteGuard>{children}</RouteGuard>
         </main>
       </div>
       {!isAuthPage && <GlobalSearch />}

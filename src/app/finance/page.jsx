@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { ShieldAlert, TrendingUp, TrendingDown, DollarSign, Plus, Check, FileText, FileMinus, X, Printer, Download, Trash2, Edit2 } from "lucide-react";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 
 export default function FinancePage() {
   const { currentUser, role } = useAuth();
@@ -53,8 +54,9 @@ export default function FinancePage() {
   const [invClientName, setInvClientName] = useState("");
   const [invClientAttention, setInvClientAttention] = useState("");
   const [invClientEmail, setInvClientEmail] = useState("");
-  const [invCraNumber, setInvCraNumber] = useState("");
-  const [invHstNumber, setInvHstNumber] = useState("");
+  const [invCraNumber, setInvCraNumber] = useState("777790411");
+  const [invHstNumber, setInvHstNumber] = useState("777790411 RT 0001");
+  const [invIncludeCraHst, setInvIncludeCraHst] = useState(true);
   const [invFromCompany, setInvFromCompany] = useState("14689941 Canada Inc.");
   const [invFromBrand, setInvFromBrand] = useState("Operating as Monk Media");
   const [invFromEmail, setInvFromEmail] = useState("info@monkmedia.ca");
@@ -64,7 +66,9 @@ export default function FinancePage() {
   const [editInvId, setEditInvId] = useState("");
   const [editInvNum, setEditInvNum] = useState("");
   const [editInvAmount, setEditInvAmount] = useState("");
-  const [editInvTax, setEditInvTax] = useState("");
+  const [editInvTaxPercent, setEditInvTaxPercent] = useState(0);
+  const [editInvIncludeCraHst, setEditInvIncludeCraHst] = useState(true);
+  const [editInvAmountPaid, setEditInvAmountPaid] = useState("");
   const [editInvDue, setEditInvDue] = useState("");
   const [editInvDescription, setEditInvDescription] = useState("");
   const [editInvClientName, setEditInvClientName] = useState("");
@@ -122,10 +126,26 @@ export default function FinancePage() {
     const client = clients.find((c) => c.id === invClientId);
     if (client) {
       setInvClientName(client.businessName || "");
-      setInvClientAttention(client.onboardingContactName || "Tejinder Singh");
+      setInvClientAttention(client.contactPerson || "");
       setInvClientEmail(client.email || "");
+      
+      const clientRetainer = Number(client.financials?.monthlyRetainer) || 0;
+      if (clientRetainer > 0) {
+        setInvAmount(clientRetainer.toString());
+      } else {
+        // Calculate retainer sum from client's active retainer projects
+        const activeRetainersSum = projects
+          .filter((p) => p.clientId === invClientId && p.billingType === "Retainer" && p.status !== "Completed")
+          .reduce((sum, p) => sum + (Number(p.value) || 0), 0);
+        
+        if (activeRetainersSum > 0) {
+          setInvAmount(activeRetainersSum.toString());
+        } else {
+          setInvAmount("");
+        }
+      }
     }
-  }, [invClientId, clients]);
+  }, [invClientId, clients, projects]);
 
   useEffect(() => {
     if (!currentUser || role === "team") return;
@@ -196,7 +216,8 @@ export default function FinancePage() {
   });
 
   // Calculate Metrics
-  const todayStr = new Date().toISOString().split("T")[0];
+  const d = new Date();
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   const totalBilling = scopedInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
   const totalReceived = scopedInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
@@ -243,8 +264,8 @@ export default function FinancePage() {
         clientName: invClientName,
         clientAttention: invClientAttention,
         clientEmail: invClientEmail,
-        craNumber: invCraNumber || "",
-        hstNumber: invHstNumber || "",
+        craNumber: invIncludeCraHst ? (invCraNumber || "777790411") : "",
+        hstNumber: invIncludeCraHst ? (invHstNumber || "777790411 RT 0001") : "",
         fromCompanyName: invFromCompany || "14689941 Canada Inc.",
         fromBrandName: invFromBrand || "Operating as Monk Media",
         fromEmail: invFromEmail || "info@monkmedia.ca",
@@ -261,12 +282,14 @@ export default function FinancePage() {
       setInvClientName("");
       setInvClientAttention("");
       setInvClientEmail("");
-      setInvCraNumber("");
-      setInvHstNumber("");
+      setInvIncludeCraHst(true);
+      setInvCraNumber("777790411");
+      setInvHstNumber("777790411 RT 0001");
       setInvFromCompany("14689941 Canada Inc.");
       setInvFromBrand("Operating as Monk Media");
       setInvFromEmail("info@monkmedia.ca");
       setIsLogInvOpen(false);
+
     } catch (err) {
       alert("Error adding invoice: " + err.message);
     }
@@ -277,17 +300,25 @@ export default function FinancePage() {
     setEditInvId(inv.id);
     setEditInvNum(inv.invoiceNumber || "");
     setEditInvAmount(inv.amount || "");
-    setEditInvTax(inv.tax || 0);
+    
+    // Calculate percentage from absolute tax and amount
+    const taxAmt = inv.tax || 0;
+    const baseAmt = inv.amount || 0;
+    const percent = baseAmt > 0 ? Math.round((taxAmt / baseAmt) * 100) : 0;
+    setEditInvTaxPercent(percent);
+
     setEditInvDue(inv.dueDate || "");
     setEditInvDescription(inv.description || "Software and App Development");
-    setEditInvClientName(inv.clientName || cl?.businessName || "");
-    setEditInvClientAttention(inv.clientAttention || cl?.onboardingContactName || "Tejinder Singh");
-    setEditInvClientEmail(inv.clientEmail || cl?.email || "");
+    setEditInvClientName(cl?.businessName || inv.clientName || "");
+    setEditInvClientAttention(cl?.contactPerson || inv.clientAttention || "");
+    setEditInvClientEmail(cl?.email || inv.clientEmail || "");
     setEditInvCraNumber(inv.craNumber || "");
     setEditInvHstNumber(inv.hstNumber || "");
     setEditInvFromCompany(inv.fromCompanyName || "14689941 Canada Inc.");
     setEditInvFromBrand(inv.fromBrandName || "Operating as Monk Media");
     setEditInvFromEmail(inv.fromEmail || "info@monkmedia.ca");
+    setEditInvIncludeCraHst(!!(inv.craNumber || inv.hstNumber));
+    setEditInvAmountPaid(inv.amountPaid || 0);
     setIsEditInvOpen(true);
   };
 
@@ -297,26 +328,29 @@ export default function FinancePage() {
 
     try {
       const amount = Number(editInvAmount);
-      const tax = Number(editInvTax) || 0;
+      const tax = Number(((amount * editInvTaxPercent) / 100).toFixed(2));
       const total = amount + tax;
       
       const targetInvoice = invoices.find((i) => i.id === editInvId);
-      const amountPaid = Number(targetInvoice?.amountPaid) || 0;
+      const amountPaid = Number(editInvAmountPaid) || 0;
       const balance = Math.max(0, total - amountPaid);
+      const status = balance <= 0 ? "Received" : amountPaid > 0 ? "Partial" : "Due";
 
       const updatePayload = {
         invoiceNumber: editInvNum,
         amount,
         tax,
         total,
+        amountPaid,
         balance,
+        status,
         dueDate: editInvDue || "",
         description: editInvDescription || "Software and App Development",
         clientName: editInvClientName,
         clientAttention: editInvClientAttention,
         clientEmail: editInvClientEmail,
-        craNumber: editInvCraNumber || "",
-        hstNumber: editInvHstNumber || "",
+        craNumber: editInvIncludeCraHst ? (editInvCraNumber || "777790411") : "",
+        hstNumber: editInvIncludeCraHst ? (editInvHstNumber || "777790411 RT 0001") : "",
         fromCompanyName: editInvFromCompany || "14689941 Canada Inc.",
         fromBrandName: editInvFromBrand || "Operating as Monk Media",
         fromEmail: editInvFromEmail || "info@monkmedia.ca",
@@ -573,9 +607,9 @@ export default function FinancePage() {
       }
 
       // Bill To Text Details
-      const customClientName = inv.clientName || (client ? client.businessName : "Client Business Name");
-      const customAttentionName = inv.clientAttention || (client ? client.onboardingContactName || "Tejinder Singh" : "Tejinder Singh");
-      const customClientEmail = inv.clientEmail || (client ? client.email : "client@email.com");
+      const customClientName = client?.businessName || inv.clientName || "Client Business Name";
+      const customAttentionName = client?.contactPerson || inv.clientAttention || "";
+      const customClientEmail = client?.email || inv.clientEmail || "client@email.com";
 
       pdfDoc.setTextColor(17, 24, 39); // #111827
       pdfDoc.setFont("helvetica", "bold");
@@ -1142,44 +1176,145 @@ export default function FinancePage() {
 
             {/* SUB-TAB 4: PROFIT STATEMENT */}
             {activeTab === "profit" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 border border-sky-100 rounded-3xl shadow-xl">
-                <div>
-                  <h3 className="text-sm font-bold text-sky-600 mb-4 pb-1 border-b border-sky-50">Earnings breakdown</h3>
-                  <div className="space-y-3.5 text-xs text-sky-600 font-semibold">
-                    <div className="flex justify-between">
-                      <span className="text-sky-400 font-bold uppercase">Total Billings Issued</span>
-                      <span>${totalBilling.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 border border-sky-100 rounded-3xl shadow-xl bg-white">
+                  <div>
+                    <h3 className="text-sm font-bold text-sky-600 mb-4 pb-1 border-b border-sky-50">Earnings breakdown</h3>
+                    <div className="space-y-3.5 text-xs text-sky-600 font-semibold">
+                      <div className="flex justify-between">
+                        <span className="text-sky-400 font-bold uppercase">Total Billings Issued</span>
+                        <span>${totalBilling.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sky-400 font-bold uppercase">Total Cash Inflow Collected</span>
+                        <span className="text-sky-500 font-bold">${totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-dashed border-sky-100 pt-3">
+                        <span className="text-sky-400 font-bold uppercase">Client Outstanding Balances</span>
+                        <span>${totalOutstanding.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sky-400 font-bold uppercase">Total Cash Inflow Collected</span>
-                      <span className="text-sky-500 font-bold">${totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-dashed border-sky-100 pt-3">
-                      <span className="text-sky-400 font-bold uppercase">Client Outstanding Balances</span>
-                      <span>${totalOutstanding.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-bold text-sky-600 mb-4 pb-1 border-b border-sky-50">Profit summary</h3>
+                    <div className="space-y-3.5 text-xs text-sky-600 font-semibold">
+                      <div className="flex justify-between">
+                        <span className="text-sky-400 font-bold uppercase">Collected Cash</span>
+                        <span>${totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sky-400 font-bold uppercase">Logged Expenditures</span>
+                        <span className="text-red-500 font-bold">-${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-sky-100 pt-3 text-sm">
+                        <span className="text-sky-600 font-bold uppercase">Net Profits Margin</span>
+                        <span className={`font-bold ${netProfit >= 0 ? "text-sky-600" : "text-red-500"}`}>
+                          ${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="text-sm font-bold text-sky-600 mb-4 pb-1 border-b border-sky-50">Profit summary</h3>
-                  <div className="space-y-3.5 text-xs text-sky-600 font-semibold">
-                    <div className="flex justify-between">
-                      <span className="text-sky-400 font-bold uppercase">Collected Cash</span>
-                      <span>${totalReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                {/* 3D Profit Pie Chart Card */}
+                {(() => {
+                  const profitPieData = [
+                    { name: "Net Profit", value: Math.max(0, netProfit), color: "#0ea5e9" }, // sky-500
+                    { name: "Logged Expenditures", value: totalExpenses, color: "#ef4444" }, // red-500
+                    { name: "Outstanding Balances", value: totalOutstanding, color: "#f59e0b" }, // amber-500
+                  ].filter(item => item.value > 0);
+
+                  return (
+                    <div className="p-6 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-sky-600">3D Financial Allocation</h3>
+                        <p className="text-[10px] text-sky-400 uppercase tracking-widest font-semibold mt-0.5">
+                          Visual representation of overall cash allocation & balances
+                        </p>
+                      </div>
+                      <div className="w-full min-h-[300px] flex items-center justify-center relative overflow-hidden">
+                        {profitPieData.length === 0 ? (
+                          <div className="text-center text-sky-400 text-xs py-12 font-semibold">
+                            No financial records found to visualize.
+                          </div>
+                        ) : (
+                          <div className="relative w-full h-[280px] flex items-center justify-center">
+                            {/* 3D Extrusion Stack Layer 3 (Bottom shadow) */}
+                            <div className="absolute inset-0 pointer-events-none" style={{
+                              transform: "translate3d(0, 8px, -8px) rotateX(55deg) rotateZ(-10deg)",
+                              transformStyle: "preserve-3d",
+                              filter: "brightness(0.5) blur(4px) opacity(0.3)",
+                            }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie data={profitPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
+                                    {profitPieData.map((entry, index) => (
+                                      <Cell key={`cell-shadow-${index}`} fill="#000000" />
+                                    ))}
+                                  </Pie>
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+
+                            {/* 3D Extrusion Stack Layer 2 (Extruded edge thickness) */}
+                            <div className="absolute inset-0 pointer-events-none" style={{
+                              transform: "translate3d(0, 4px, -4px) rotateX(55deg) rotateZ(-10deg)",
+                              transformStyle: "preserve-3d",
+                              filter: "brightness(0.65) contrast(1.1)",
+                            }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie data={profitPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
+                                    {profitPieData.map((entry, index) => (
+                                      <Cell key={`cell-thick-${index}`} fill={entry.color} />
+                                    ))}
+                                  </Pie>
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+
+                            {/* 3D Extrusion Stack Layer 1 (Top interactive face) */}
+                            <div className="absolute inset-0" style={{
+                              transform: "translate3d(0, 0, 0) rotateX(55deg) rotateZ(-10deg)",
+                              transformStyle: "preserve-3d",
+                            }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie data={profitPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
+                                    {profitPieData.map((entry, index) => (
+                                      <Cell key={`cell-face-${index}`} fill={entry.color} />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip
+                                    contentStyle={{
+                                      backgroundColor: "#ffffff",
+                                      border: "1px solid #bae6fd",
+                                      borderRadius: "12px",
+                                      fontSize: "12px",
+                                      color: "#0369a1"
+                                    }}
+                                    formatter={(value) => [`$${Number(value).toLocaleString()}`, "Amount"]}
+                                  />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+                            
+                            {/* Custom Legend outside the skewed 3D element */}
+                            <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-6 pointer-events-auto">
+                              {profitPieData.map((entry, idx) => (
+                                <div key={`legend-${idx}`} className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+                                  <span className="text-[10px] font-black text-sky-600 uppercase tracking-wider">{entry.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sky-400 font-bold uppercase">Logged Expenditures</span>
-                      <span className="text-red-500 font-bold">-${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-sky-100 pt-3 text-sm">
-                      <span className="text-sky-600 font-bold uppercase">Net Profits Margin</span>
-                      <span className={`font-bold ${netProfit >= 0 ? "text-sky-600" : "text-red-500"}`}>
-                        ${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1259,26 +1394,53 @@ export default function FinancePage() {
                       className="w-full p-2 border border-sky-100 rounded-xl"
                     />
                   </div>
-                   <div>
-                    <label className="block text-sky-500 mb-1">CRA Business Number</label>
+                  <div className="flex items-center gap-2 py-1">
                     <input
-                      type="text"
-                      value={invCraNumber}
-                      onChange={(e) => setInvCraNumber(e.target.value)}
-                      placeholder="e.g. 777790411"
-                      className="w-full p-2 border border-sky-100 rounded-xl"
+                      type="checkbox"
+                      id="invIncludeCraHst"
+                      checked={invIncludeCraHst}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setInvIncludeCraHst(checked);
+                        if (checked) {
+                          if (!invCraNumber) setInvCraNumber("777790411");
+                          if (!invHstNumber) setInvHstNumber("777790411 RT 0001");
+                        } else {
+                          setInvCraNumber("");
+                          setInvHstNumber("");
+                        }
+                      }}
+                      className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
                     />
+                    <label htmlFor="invIncludeCraHst" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
+                      Include CRA Business Number & HST Registration No.
+                    </label>
                   </div>
-                  <div>
-                    <label className="block text-sky-500 mb-1">HST Registration No.</label>
-                    <input
-                      type="text"
-                      value={invHstNumber}
-                      onChange={(e) => setInvHstNumber(e.target.value)}
-                      placeholder="e.g. 777790411 RT 0001"
-                      className="w-full p-2 border border-sky-100 rounded-xl"
-                    />
-                  </div>
+
+                  {invIncludeCraHst && (
+                    <div className="grid grid-cols-2 gap-4 animate-fadeIn">
+                      <div>
+                        <label className="block text-sky-500 mb-1">CRA Business Number</label>
+                        <input
+                          type="text"
+                          value={invCraNumber}
+                          onChange={(e) => setInvCraNumber(e.target.value)}
+                          placeholder="e.g. 777790411"
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sky-500 mb-1">HST Registration No.</label>
+                        <input
+                          type="text"
+                          value={invHstNumber}
+                          onChange={(e) => setInvHstNumber(e.target.value)}
+                          placeholder="e.g. 777790411 RT 0001"
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+                    </div>
+                  )}
                   <div className="pt-2 border-t border-dashed border-sky-100 mt-2">
                     <h4 className="text-[9px] font-black uppercase text-sky-400 tracking-wider mb-2">Sender (From) Customization</h4>
                   </div>
@@ -1327,7 +1489,7 @@ export default function FinancePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sky-500 mb-1">Base Billing Value ($)</label>
+                    <label className="block text-sky-500 mb-1">Retainer Amount ($)</label>
                     <input
                       type="number"
                       required
@@ -1336,6 +1498,28 @@ export default function FinancePage() {
                       placeholder="e.g. 2000"
                       className="w-full p-2 border border-sky-100 rounded-xl"
                     />
+                    {(() => {
+                      const client = clients.find((c) => c.id === invClientId);
+                      const clientRetainer = Number(client?.financials?.monthlyRetainer) || 0;
+                      const activeProjectsSum = projects
+                        .filter((p) => p.clientId === invClientId && p.billingType === "Retainer" && p.status !== "Completed")
+                        .reduce((sum, p) => sum + (Number(p.value) || 0), 0);
+                      
+                      if (clientRetainer > 0) {
+                        return (
+                          <p className="text-[10px] text-sky-500 mt-1 font-bold">
+                            Configured client monthly retainer: ${clientRetainer.toLocaleString()}
+                          </p>
+                        );
+                      } else if (activeProjectsSum > 0) {
+                        return (
+                          <p className="text-[10px] text-sky-500 mt-1 font-bold">
+                            Active projects monthly retainer sum: ${activeProjectsSum.toLocaleString()}
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   <div>
                     <label className="block text-sky-500 mb-1">Due Date</label>
@@ -1676,12 +1860,12 @@ export default function FinancePage() {
                     {/* Recipient Details */}
                     <div className="space-y-2">
                       <h4 className="font-bold text-sky-600 uppercase tracking-wider border-b border-sky-100 pb-1.5">Bill To</h4>
-                      <p className="font-bold text-gray-900">{inv.clientName || (client ? client.businessName : "Client Business Name")}</p>
+                      <p className="font-bold text-gray-900">{client?.businessName || inv.clientName || "Client Business Name"}</p>
                       <p className="text-gray-500 font-medium text-xs text-sky-600/80">
-                        Attention: {inv.clientAttention || (client ? client.onboardingContactName || "Tejinder Singh" : "Tejinder Singh")}
+                        Attention: {client?.contactPerson || inv.clientAttention || ""}
                       </p>
                       <p className="text-gray-500 font-medium text-xs text-sky-600/80">
-                        Email: {inv.clientEmail || (client ? client.email : "client@email.com")}
+                        Email: {client?.email || inv.clientEmail || "client@email.com"}
                       </p>
                     </div>
                   </div>
@@ -1853,9 +2037,9 @@ export default function FinancePage() {
                       className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sky-500 mb-1">Base Billing Value ($)</label>
+                      <label className="block text-sky-500 mb-1">Retainer Amount ($)</label>
                       <input
                         type="number"
                         required
@@ -1865,17 +2049,26 @@ export default function FinancePage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sky-500 mb-1">Tax / HST Amount ($)</label>
+                      <label className="block text-sky-500 mb-1">Tax / HST (%)</label>
                       <input
                         type="number"
                         required
-                        value={editInvTax}
-                        onChange={(e) => setEditInvTax(e.target.value)}
+                        value={editInvTaxPercent}
+                        onChange={(e) => setEditInvTaxPercent(Number(e.target.value) || 0)}
                         className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
                       />
-                      <p className="text-[10px] text-sky-400 mt-1 font-semibold">Set to 0 to completely hide the HST row in the PDF.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Amount Received ($)</label>
+                      <input
+                        type="number"
+                        value={editInvAmountPaid}
+                        onChange={(e) => setEditInvAmountPaid(Number(e.target.value) || 0)}
+                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                      />
                     </div>
                   </div>
+                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Set tax percentage to 0 to completely hide the HST row in the PDF.</p>
                 </div>
 
                 {/* Recipient Details */}
@@ -1950,26 +2143,51 @@ export default function FinancePage() {
                       className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sky-500 mb-1">CRA Business Number</label>
-                      <input
-                        type="text"
-                        value={editInvCraNumber}
-                        onChange={(e) => setEditInvCraNumber(e.target.value)}
-                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">HST Registration No.</label>
-                      <input
-                        type="text"
-                        value={editInvHstNumber}
-                        onChange={(e) => setEditInvHstNumber(e.target.value)}
-                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
-                      />
-                    </div>
+                  <div className="flex items-center gap-2 py-1">
+                    <input
+                      type="checkbox"
+                      id="editInvIncludeCraHst"
+                      checked={editInvIncludeCraHst}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setEditInvIncludeCraHst(checked);
+                        if (checked) {
+                          if (!editInvCraNumber) setEditInvCraNumber("777790411");
+                          if (!editInvHstNumber) setEditInvHstNumber("777790411 RT 0001");
+                        } else {
+                          setEditInvCraNumber("");
+                          setEditInvHstNumber("");
+                        }
+                      }}
+                      className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
+                    />
+                    <label htmlFor="editInvIncludeCraHst" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
+                      Include CRA Business Number & HST Registration No.
+                    </label>
                   </div>
+
+                  {editInvIncludeCraHst && (
+                    <div className="grid grid-cols-2 gap-4 animate-fadeIn">
+                      <div>
+                        <label className="block text-sky-500 mb-1">CRA Business Number</label>
+                        <input
+                          type="text"
+                          value={editInvCraNumber}
+                          onChange={(e) => setEditInvCraNumber(e.target.value)}
+                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sky-500 mb-1">HST Registration No.</label>
+                        <input
+                          type="text"
+                          value={editInvHstNumber}
+                          onChange={(e) => setEditInvHstNumber(e.target.value)}
+                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-6 flex justify-end gap-2 border-t border-sky-100 bg-sky-50/5">

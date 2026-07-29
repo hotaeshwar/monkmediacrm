@@ -30,8 +30,20 @@ export async function GET(request) {
       const nextPayDate = financials.nextPaymentDate || todayStr;
       
       if (nextPayDate <= todayStr) {
-        // Calculate new invoice totals
-        const amount = Number(financials.monthlyRetainer) || 0;
+        // Calculate new invoice totals based on active retainer projects
+        const projectsSnap = await adminDb.collection("projects")
+          .where("clientId", "==", clientId)
+          .where("billingType", "==", "Retainer")
+          .get();
+
+        let amount = 0;
+        for (const pDoc of projectsSnap.docs) {
+          const pData = pDoc.data();
+          if (pData.status !== "Completed") {
+            amount += (Number(pData.value) || 0);
+          }
+        }
+
         if (amount <= 0) continue;
         
         const taxRate = Number(financials.taxRate) || 13;

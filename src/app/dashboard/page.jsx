@@ -229,7 +229,8 @@ export default function Dashboard() {
   });
 
   // 2. Metrics Calculations
-  const todayStr = new Date().toISOString().split("T")[0];
+  const dObj = new Date();
+  const todayStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, "0")}-${String(dObj.getDate()).padStart(2, "0")}`;
 
   const totalActiveClients = scopedClients.filter((c) => c.status === "Active").length;
   
@@ -275,13 +276,27 @@ export default function Dashboard() {
   let additionalInvoicesRevenue = 0;
 
   if (role === "admin" || role === "manager") {
-    // MRR = sum of active clients' retainer
-    mrr = scopedClients.reduce((acc, c) => acc + (Number(c.financials?.monthlyRetainer) || 0), 0);
+    // MRR = Client-level monthly retainers + active project-level retainers
+    const clientRetainersSum = scopedClients.reduce((acc, c) => {
+      if (c.status === "Active" && c.financials?.monthlyRetainer) {
+        return acc + (Number(c.financials.monthlyRetainer) || 0);
+      }
+      return acc;
+    }, 0);
+
+    const projectRetainersSum = scopedProjects.reduce((acc, p) => {
+      if (p.billingType === "Retainer" && p.status !== "Completed" && p.status !== "Cancelled") {
+        return acc + (Number(p.value) || 0);
+      }
+      return acc;
+    }, 0);
+
+    mrr = clientRetainersSum + projectRetainersSum;
 
     // Revenue received this month: Invoices paid this month
     const now = new Date();
     revenueReceivedThisMonth = scopedInvoices.reduce((acc, inv) => {
-      if (inv.status !== "Paid" && (Number(inv.amountPaid) || 0) <= 0) return acc;
+      if (inv.status !== "Paid" && inv.status !== "Received" && (Number(inv.amountPaid) || 0) <= 0) return acc;
       const invDate = new Date(inv.invoiceDate || inv.dueDate);
       if (invDate.getMonth() === now.getMonth() && invDate.getFullYear() === now.getFullYear()) {
         return acc + (Number(inv.amountPaid) || 0);
@@ -304,13 +319,15 @@ export default function Dashboard() {
 
     // Outstanding payments
     outstandingPayments = scopedInvoices.reduce((acc, inv) => {
-      if (inv.status === "Paid") return acc;
+      const status = inv.status || "Due";
+      if (status === "Paid" || status === "Received") return acc;
       return acc + (Number(inv.balance) || 0);
     }, 0);
 
-    // Overdue payments (Invoices where dueDate < today and status != Paid)
+    // Overdue payments (Invoices where dueDate < today and status != Paid/Received)
     overduePayments = scopedInvoices.reduce((acc, inv) => {
-      if (inv.status !== "Paid" && inv.dueDate < todayStr) {
+      const status = inv.status || "Due";
+      if (status !== "Paid" && status !== "Received" && inv.dueDate < todayStr) {
         return acc + (Number(inv.balance) || 0);
       }
       return acc;

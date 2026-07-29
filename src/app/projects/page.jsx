@@ -30,6 +30,7 @@ export default function ProjectsPage() {
   const [projEndDate, setProjEndDate] = useState("");
   const [projManager, setProjManager] = useState("");
   const [projDescription, setProjDescription] = useState("");
+  const [projBillingType, setProjBillingType] = useState("One-Time");
   const [formError, setFormError] = useState("");
 
   // Edit Project Form State
@@ -47,6 +48,7 @@ export default function ProjectsPage() {
   const [editProjProgress, setEditProjProgress] = useState(0);
   const [editProjDriveFolder, setEditProjDriveFolder] = useState("");
   const [editProjNotes, setEditProjNotes] = useState("");
+  const [editProjBillingType, setEditProjBillingType] = useState("One-Time");
 
   // Project Billing Form State
   const [billProjOpen, setBillProjOpen] = useState(false);
@@ -184,6 +186,7 @@ export default function ProjectsPage() {
     setEditProjProgress(project.progressPercent || 0);
     setEditProjDriveFolder(project.driveFolder || "");
     setEditProjNotes(project.notes || "");
+    setEditProjBillingType(project.billingType || "One-Time");
     setEditOpen(true);
   };
 
@@ -206,6 +209,7 @@ export default function ProjectsPage() {
         endDate: editProjEndDate || "",
         deadline: editProjEndDate || "",
         value: Number(editProjVal) || 0,
+        billingType: editProjBillingType || "One-Time",
         projectManager: editProjManager || currentUser?.uid,
         status: editProjStatus,
         progressPercent: Number(editProjProgress) || 0,
@@ -444,6 +448,7 @@ export default function ProjectsPage() {
         deadline: projEndDate || "",
         completionDate: "",
         value: Number(projVal) || 0,
+        billingType: projBillingType || "One-Time",
         estimatedCost: 0,
         actualCost: 0,
         profit: 0,
@@ -463,6 +468,7 @@ export default function ProjectsPage() {
       setProjClientId("");
       setProjType("Social Media");
       setProjVal("");
+      setProjBillingType("One-Time");
       setProjStartDate("");
       setProjEndDate("");
       setProjManager("");
@@ -589,7 +595,12 @@ export default function ProjectsPage() {
                       <td className="p-4.5 px-6">
                         {p.startDate ? p.startDate + " to " + (p.endDate || p.deadline) : (p.deadline || "None")}
                       </td>
-                      <td className="p-4.5 px-6">${Number(p.value).toLocaleString()}</td>
+                      <td className="p-4.5 px-6">
+                        ${Number(p.value).toLocaleString()}
+                        {p.billingType === "Retainer" && (
+                          <span className="text-[10px] text-sky-500 font-bold ml-1 uppercase">(Retainer)</span>
+                        )}
+                      </td>
                       <td className="p-4.5 px-6">
                         <div className="flex items-center gap-2">
                           <div className="w-20 bg-sky-50 rounded-full h-1.5">
@@ -690,6 +701,7 @@ export default function ProjectsPage() {
                               {p.value > 0 && (
                                 <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md flex-shrink-0">
                                   ${Number(p.value).toLocaleString()}
+                                  {p.billingType === "Retainer" ? " / mo" : ""}
                                 </span>
                               )}
                             </div>
@@ -877,6 +889,19 @@ export default function ProjectsPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                        Billing Model
+                      </label>
+                      <select
+                        value={projBillingType}
+                        onChange={(e) => setProjBillingType(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none text-sky-600 font-semibold"
+                      >
+                        <option value="One-Time">One-Time Project</option>
+                        <option value="Retainer">Monthly Retainer</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
                         Start Date
                       </label>
                       <input
@@ -1045,6 +1070,19 @@ export default function ProjectsPage() {
                         placeholder="e.g. 5000"
                         className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                        Billing Model
+                      </label>
+                      <select
+                        value={editProjBillingType}
+                        onChange={(e) => setEditProjBillingType(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none text-sky-600 font-semibold"
+                      >
+                        <option value="One-Time">One-Time Project</option>
+                        <option value="Retainer">Monthly Retainer</option>
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">

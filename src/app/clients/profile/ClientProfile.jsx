@@ -36,13 +36,14 @@ import {
   ShieldAlert,
   X,
   Save,
-  Edit
+  Edit,
+  KeyRound
 } from "lucide-react";
 
 export default function ClientProfilePage() {
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
-  const { currentUser, role, loading: authLoading } = useAuth();
+  const { currentUser, role, clientId, loading: authLoading } = useAuth();
   const router = useRouter();
 
   // Core Data
@@ -58,6 +59,13 @@ export default function ClientProfilePage() {
   const [contentList, setContentList] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+  
+  // Client Portal Credentials Form State
+  const [portalEmail, setPortalEmail] = useState("");
+  const [portalPassword, setPortalPassword] = useState("");
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalFormError, setPortalFormError] = useState("");
+  const [portalSuccessData, setPortalSuccessData] = useState(null);
   
   // UI States
   const [activeTab, setActiveTab] = useState("overview");
@@ -154,6 +162,7 @@ export default function ClientProfilePage() {
       setNewInvClientName(client.businessName || "");
       setNewInvClientAttention(client.onboardingContactName || "Tejinder Singh");
       setNewInvClientEmail(client.email || "");
+      setPortalEmail(client.email || "");
     }
   }, [client]);
 
@@ -189,6 +198,11 @@ export default function ClientProfilePage() {
         }
         if (role === "team" && !clientData.assignedTeam?.includes(currentUser?.uid) && clientData.accountManager !== currentUser?.uid) {
           setError("Access Denied: You are not assigned to this client.");
+          setLoading(false);
+          return;
+        }
+        if (role === "client" && clientData.id !== clientId) {
+          setError("Access Denied: You can only view your own client profile.");
           setLoading(false);
           return;
         }
@@ -750,61 +764,7 @@ export default function ClientProfilePage() {
     }
   };
 
-  // Add Invoice
-  const handleAddInvoice = async (e) => {
-    e.preventDefault();
-    if (!newInvNum || !newInvAmount) return;
 
-    try {
-      const amount = Number(newInvAmount);
-      const taxRate = newInvIncludeHST ? (client.financials?.taxRate || 13) : 0;
-      const tax = Number(((amount * taxRate) / 100).toFixed(2));
-      const total = amount + tax;
-
-      const payload = {
-        invoiceNumber: newInvNum,
-        clientId: id,
-        projectId: "",
-        invoiceDate: new Date().toISOString().split("T")[0],
-        dueDate: newInvDue || "",
-        amount,
-        tax,
-        total,
-        amountPaid: 0,
-        balance: total,
-        status: "Due",
-        paymentMethod: client.financials?.paymentMethod || "Credit Card",
-        receiptUrl: "",
-        notes: "",
-        description: newInvDescription || "Software and App Development",
-        clientName: newInvClientName,
-        clientAttention: newInvClientAttention,
-        clientEmail: newInvClientEmail,
-        craNumber: newInvCraNumber || "",
-        hstNumber: newInvHstNumber || "",
-        fromCompanyName: newInvFromCompany || "14689941 Canada Inc.",
-        fromBrandName: newInvFromBrand || "Operating as Monk Media",
-        fromEmail: newInvFromEmail || "info@monkmedia.ca",
-      };
-
-      await addDoc(collection(db, "invoices"), payload);
-      setNewInvNum("");
-      setNewInvAmount("");
-      setNewInvDue("");
-      setNewInvIncludeHST(false);
-      setNewInvDescription("Software and App Development");
-      setNewInvClientName(client.businessName || "");
-      setNewInvClientAttention(client.onboardingContactName || "Tejinder Singh");
-      setNewInvClientEmail(client.email || "");
-      setNewInvCraNumber("");
-      setNewInvHstNumber("");
-      setNewInvFromCompany("14689941 Canada Inc.");
-      setNewInvFromBrand("Operating as Monk Media");
-      setNewInvFromEmail("info@monkmedia.ca");
-    } catch (err) {
-      alert("Error adding invoice: " + err.message);
-    }
-  };
 
   // Add Content Item
   const handleAddContent = async (e) => {
@@ -918,12 +878,12 @@ export default function ClientProfilePage() {
   const tabs = [
     { id: "overview", label: "Overview", icon: User },
     { id: "projects", label: "Projects", icon: Briefcase },
-    { id: "payments", label: "Payments", icon: CreditCard, adminOnly: true },
+    { id: "payments", label: "Payments", icon: CreditCard, roles: ["admin", "manager", "client"] },
     { id: "content", label: "Content", icon: Calendar },
     { id: "documents", label: "Documents", icon: FileText },
     { id: "links", label: "Account Links", icon: Link2 },
     { id: "checklist", label: "Onboarding Checklist", icon: ListTodo },
-  ].filter(t => !t.adminOnly || (role === "admin" || role === "manager"));
+  ].filter(t => !t.roles || t.roles.includes(role || ""));
 
   return (
     <div className="p-4 sm:p-8 bg-white min-h-screen">
@@ -932,12 +892,14 @@ export default function ClientProfilePage() {
         {/* Back and Brand Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-sky-100">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/clients")}
-              className="p-2 rounded-xl hover:bg-sky-50 text-sky-500 border border-sky-100 transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
+            {role !== "client" && (
+              <button
+                onClick={() => router.push("/clients")}
+                className="p-2 rounded-xl hover:bg-sky-50 text-sky-500 border border-sky-100 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-bold text-sky-600">{client.businessName}</h1>
@@ -983,19 +945,21 @@ export default function ClientProfilePage() {
                 <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
                   <div className="flex items-center justify-between pb-2 border-b border-sky-50">
                     <h3 className="text-sm font-bold text-sky-600">Company Overview</h3>
-                    <button
-                      onClick={() => {
-                        if (isEditingClient) {
-                          setIsEditingClient(false);
-                          setEditData(null);
-                        } else {
-                          handleStartEdit();
-                        }
-                      }}
-                      className="px-3 py-1 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl text-xs font-bold transition-all"
-                    >
-                      {isEditingClient ? "Cancel" : "Edit Profile"}
-                    </button>
+                    {role !== "client" && (
+                      <button
+                        onClick={() => {
+                          if (isEditingClient) {
+                            setIsEditingClient(false);
+                            setEditData(null);
+                          } else {
+                            handleStartEdit();
+                          }
+                        }}
+                        className="px-3 py-1 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl text-xs font-bold transition-all"
+                      >
+                        {isEditingClient ? "Cancel" : "Edit Profile"}
+                      </button>
+                    )}
                   </div>
 
                   {isEditingClient && editData ? (
@@ -1130,12 +1094,13 @@ export default function ClientProfilePage() {
                         <p className="text-sky-400 font-bold uppercase">Retainer Start Date</p>
                         <p className="mt-0.5">{client.financials?.contractStart || "Not set"}</p>
                       </div>
-                      {(role === "admin" || role === "manager") && (
+                      {(role === "admin" || role === "manager" || role === "client") && (
                         <div>
                           <p className="text-sky-400 font-bold uppercase">Monthly Retainer</p>
                           <p className="mt-0.5">${(client.financials?.monthlyRetainer || 0).toLocaleString()}</p>
                         </div>
                       )}
+
                       <div className="sm:col-span-2">
                         <p className="text-sky-400 font-bold uppercase">Website Domain</p>
                         <p className="mt-0.5 text-sky-500 underline">
@@ -1153,24 +1118,26 @@ export default function ClientProfilePage() {
                 </div>
 
                 {/* Notes division */}
-                <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-3">
-                  <h3 className="text-sm font-bold text-sky-600">Client Strategy & Notes</h3>
-                  <textarea
-                    rows={4}
-                    value={notesText}
-                    onChange={(e) => setNotesText(e.target.value)}
-                    placeholder="Provide special notes, retainer updates, shoot guidelines..."
-                    className="w-full p-3 border border-sky-100 rounded-2xl text-xs text-sky-600 font-medium focus:outline-none focus:ring-1 focus:ring-sky-300"
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => handleUpdateClient({ notes: notesText })}
-                      className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold shadow"
-                    >
-                      Save Notes
-                    </button>
+                {role !== "client" && (
+                  <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-3">
+                    <h3 className="text-sm font-bold text-sky-600">Client Strategy & Notes</h3>
+                    <textarea
+                      rows={4}
+                      value={notesText}
+                      onChange={(e) => setNotesText(e.target.value)}
+                      placeholder="Provide special notes, retainer updates, shoot guidelines..."
+                      className="w-full p-3 border border-sky-100 rounded-2xl text-xs text-sky-600 font-medium focus:outline-none focus:ring-1 focus:ring-sky-300"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => handleUpdateClient({ notes: notesText })}
+                        className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold shadow"
+                      >
+                        Save Notes
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Client Projects Overview Card */}
                 <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
@@ -1224,38 +1191,267 @@ export default function ClientProfilePage() {
               {/* Team assignment section */}
               <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4 h-fit">
                 <h3 className="text-sm font-bold text-sky-600">Assigned Team Pool</h3>
-                <div className="space-y-3">
-                  {teamMembers.map((member) => {
-                    const isAssigned = teamSelect.includes(member.id);
-                    return (
-                      <button
+                {role === "client" ? (
+                  <div className="space-y-3">
+                    {teamMembers.filter((m) => teamSelect.includes(m.id)).map((member) => (
+                      <div
                         key={member.id}
-                        onClick={async () => {
-                          let nextTeam;
-                          if (isAssigned) {
-                            nextTeam = teamSelect.filter((uid) => uid !== member.id);
-                          } else {
-                            nextTeam = [...teamSelect, member.id];
-                          }
-                          setTeamSelect(nextTeam);
-                          await handleUpdateClient({ assignedTeam: nextTeam });
-                        }}
-                        className={`w-full p-2.5 rounded-2xl border text-xs text-left flex items-center justify-between font-semibold transition-all ${
-                          isAssigned
-                            ? "bg-sky-50 border-sky-200 text-sky-600"
-                            : "bg-white border-sky-100 text-sky-400 hover:bg-sky-50/10"
-                        }`}
+                        className="w-full p-2.5 rounded-2xl border border-sky-100 bg-sky-50/20 text-xs font-semibold text-sky-600 flex items-center justify-between"
                       >
                         <div className="min-w-0">
                           <p className="truncate">{member.name}</p>
                           <p className="text-[10px] text-sky-400 capitalize">{member.role}</p>
                         </div>
-                        {isAssigned && <Check className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                      </div>
+                    ))}
+                    {teamMembers.filter((m) => teamSelect.includes(m.id)).length === 0 && (
+                      <p className="text-xs text-sky-400 italic">No assigned team members.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {teamMembers.map((member) => {
+                      const isAssigned = teamSelect.includes(member.id);
+                      return (
+                        <button
+                          key={member.id}
+                          onClick={async () => {
+                            let nextTeam;
+                            if (isAssigned) {
+                              nextTeam = teamSelect.filter((uid) => uid !== member.id);
+                            } else {
+                              nextTeam = [...teamSelect, member.id];
+                            }
+                            setTeamSelect(nextTeam);
+                            await handleUpdateClient({ assignedTeam: nextTeam });
+                          }}
+                          className={`w-full p-2.5 rounded-2xl border text-xs text-left flex items-center justify-between font-semibold transition-all ${
+                            isAssigned
+                              ? "bg-sky-50 border-sky-200 text-sky-600"
+                              : "bg-white border-sky-100 text-sky-400 hover:bg-sky-50/10"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate">{member.name}</p>
+                            <p className="text-[10px] text-sky-400 capitalize">{member.role}</p>
+                          </div>
+                          {isAssigned && <Check className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+
+              {/* Client Portal Access Card */}
+              {role === "admin" && (() => {
+                const clientPortalUser = teamMembers.find(
+                  (member) => member.role === "client" && member.clientId === id
+                );
+                return (
+                  <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4 h-fit bg-white">
+                    <div className="flex items-center gap-2 pb-2 border-b border-sky-50">
+                      <KeyRound className="w-5 h-5 text-sky-500" />
+                      <h3 className="text-sm font-bold text-sky-600">Client Portal Access</h3>
+                    </div>
+
+                    {clientPortalUser ? (
+                      <div className="space-y-3">
+                        <div className="p-3 bg-sky-50/50 border border-sky-100/80 rounded-2xl text-xs font-semibold space-y-1">
+                          <p className="text-sky-400 uppercase text-[9px] font-bold">Portal Access Email</p>
+                          <p className="text-sky-600 font-bold">{clientPortalUser.email}</p>
+                          <p className="text-sky-400 uppercase text-[9px] font-bold mt-2">Account Status</p>
+                          <p className="capitalize text-sky-600">{clientPortalUser.status || "Active"}</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <p className="text-[10px] text-sky-400 italic">This client has active login access to their portal.</p>
+                          <button
+                            onClick={async () => {
+                              const newPass = prompt("Enter a new password for this client:");
+                              if (!newPass) return;
+                              if (newPass.length < 6) {
+                                alert("Password must be at least 6 characters.");
+                                return;
+                              }
+                              try {
+                                const idToken = await auth.currentUser.getIdToken();
+                                const res = await fetch("/api/admin/reset-password", {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    Authorization: `Bearer ${idToken}`,
+                                  },
+                                  body: JSON.stringify({ email: clientPortalUser.email, password: newPass }),
+                                });
+                                if (!res.ok) {
+                                  const data = await res.json();
+                                  throw new Error(data.error || "Failed to reset password.");
+                                }
+                                alert("Success: Client password updated successfully!");
+                              } catch (err) {
+                                alert("Error resetting password: " + err.message);
+                              }
+                            }}
+                            className="w-full py-2 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 rounded-xl text-xs font-bold transition-all"
+                          >
+                            Reset Password
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <p className="text-xs text-sky-400 leading-relaxed font-semibold">
+                          This client does not have login credentials yet. Provision credentials to allow them to access their portal.
+                        </p>
+
+                        {portalFormError && (
+                          <div className="p-2.5 bg-red-50 text-red-500 rounded-xl text-[10px] font-bold border border-red-100">
+                            {portalFormError}
+                          </div>
+                        )}
+
+                        {portalSuccessData ? (
+                          <div className="p-3 bg-sky-50 border border-sky-100 rounded-2xl space-y-2.5">
+                            <div className="text-xs font-semibold space-y-1">
+                              <p className="text-emerald-600 font-bold">✓ Portal Access Created!</p>
+                              <div className="bg-white p-2 rounded-xl border border-sky-100 space-y-1 select-all font-mono text-[10px]">
+                                <p>Email: {portalSuccessData.email}</p>
+                                <p>Password: {portalSuccessData.password}</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  const txt = `Email: ${portalSuccessData.email}\nPassword: ${portalSuccessData.password}\nPortal Link: ${window.location.origin}/login/client`;
+                                  navigator.clipboard.writeText(txt);
+                                  alert("Copied credentials to clipboard!");
+                                }}
+                                className="flex-1 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-600 rounded-xl text-[10px] font-bold transition"
+                              >
+                                Copy
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const cleanPhone = client.phone ? client.phone.replace(/[^0-9]/g, "") : "";
+                                  const text = `Hi! Here are your login credentials for the Monk Media Portal:\n\nEmail: ${portalSuccessData.email}\nPassword: ${portalSuccessData.password}\nPortal Link: ${window.location.origin}/login/client\n\nPlease keep these credentials secure.`;
+                                  const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+                                  window.open(url, "_blank");
+                                }}
+                                className="flex-1 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-[10px] font-bold transition"
+                              >
+                                Share WA
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setPortalSuccessData(null);
+                              }}
+                              className="w-full text-center text-[10px] text-sky-400 hover:underline"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 text-xs font-semibold">
+                            <div>
+                              <label className="block text-sky-500 mb-1 font-bold uppercase text-[10px]">Email Address</label>
+                              <input
+                                type="email"
+                                value={portalEmail}
+                                onChange={(e) => setPortalEmail(e.target.value)}
+                                placeholder="client@company.com"
+                                className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sky-500 mb-1 font-bold uppercase text-[10px]">Password</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={portalPassword}
+                                  onChange={(e) => setPortalPassword(e.target.value)}
+                                  placeholder="Enter or generate password"
+                                  className="flex-1 p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*";
+                                    let gen = "";
+                                    for (let i = 0; i < 10; i++) {
+                                      gen += chars.charAt(Math.floor(Math.random() * chars.length));
+                                    }
+                                    setPortalPassword(gen);
+                                  }}
+                                  className="px-2.5 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 rounded-xl text-[10px]"
+                                >
+                                  Generate
+                                </button>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={portalLoading}
+                              onClick={async () => {
+                                setPortalFormError("");
+                                if (!portalEmail || !portalPassword) {
+                                  setPortalFormError("Email and password are required.");
+                                  return;
+                                }
+                                if (portalPassword.length < 6) {
+                                  setPortalFormError("Password must be at least 6 characters.");
+                                  return;
+                                }
+                                setPortalLoading(true);
+                                try {
+                                  const idToken = await auth.currentUser.getIdToken();
+                                  const res = await fetch("/api/admin/create-user", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${idToken}`,
+                                    },
+                                    body: JSON.stringify({
+                                      name: client.contactPerson || client.businessName,
+                                      email: portalEmail,
+                                      password: portalPassword,
+                                      role: "client",
+                                      assignedClients: [id],
+                                    }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) {
+                                    throw new Error(data.error || "Failed to create client user account.");
+                                  }
+                                  setPortalSuccessData(data);
+                                  setPortalEmail("");
+                                  setPortalPassword("");
+                                  
+                                  // Refresh users list so the local state catches it
+                                  const teamSnap = await getDocs(collection(db, "users"));
+                                  const members = [];
+                                  teamSnap.forEach((doc) => {
+                                    members.push({ id: doc.id, ...doc.data() });
+                                  });
+                                  setTeamMembers(members);
+                                } catch (err) {
+                                  setPortalFormError(err.message);
+                                } finally {
+                                  setPortalLoading(false);
+                                }
+                              }}
+                              className="w-full py-2 bg-sky-505 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition-all shadow"
+                            >
+                              {portalLoading ? "Provisioning..." : "Enable Portal Access"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
             </div>
           )}
@@ -1924,219 +2120,64 @@ export default function ClientProfilePage() {
             </div>
           )}
 
-          {/* TAB 3: PAYMENTS (Admin/Manager Scoped) */}
-          {activeTab === "payments" && (role === "admin" || role === "manager") && (
+          {/* TAB 3: PAYMENTS */}
+          {activeTab === "payments" && (
             <div className="space-y-6">
               
               {/* Financial Profile & Retainer edits */}
-              <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
-                <h3 className="text-sm font-bold text-sky-600">Financial Settings</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs font-semibold">
-                  <div>
-                    <label className="block text-sky-500 mb-1">Monthly Retainer ($)</label>
-                    <input
-                      type="number"
-                      defaultValue={client.financials?.monthlyRetainer || 0}
-                      onBlur={(e) => handleUpdateClient({ "financials.monthlyRetainer": Number(e.target.value) || 0 })}
-                      className="w-full p-2 border border-sky-100 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sky-500 mb-1">GST/Tax Number</label>
-                    <input
-                      type="text"
-                      defaultValue={client.financials?.gstNumber || ""}
-                      onBlur={(e) => handleUpdateClient({ "financials.gstNumber": e.target.value })}
-                      className="w-full p-2 border border-sky-100 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sky-500 mb-1">Billing Email</label>
-                    <input
-                      type="email"
-                      defaultValue={client.financials?.billingEmail || ""}
-                      onBlur={(e) => handleUpdateClient({ "financials.billingEmail": e.target.value })}
-                      className="w-full p-2 border border-sky-100 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sky-500 mb-1">Frequency</label>
-                    <select
-                      defaultValue={client.financials?.paymentFrequency || "Monthly"}
-                      onChange={(e) => handleUpdateClient({ "financials.paymentFrequency": e.target.value })}
-                      className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
-                    >
-                      <option value="One-Time">One-Time</option>
-                      <option value="Weekly">Weekly</option>
-                      <option value="Bi-Weekly">Bi-Weekly</option>
-                      <option value="Monthly">Monthly</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Invoicing Section & Create Form */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Form to log invoice */}
-                <form onSubmit={handleAddInvoice} className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4 h-fit">
-                  <h3 className="text-sm font-bold text-sky-600">Issue Invoice</h3>
-                  <div className="space-y-3 text-xs font-semibold">
+              {role !== "client" && (
+                <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
+                  <h3 className="text-sm font-bold text-sky-600">Financial Settings</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs font-semibold">
                     <div>
-                      <label className="block text-sky-500 mb-1">Invoice Number</label>
-                      <input
-                        type="text"
-                        required
-                        value={newInvNum}
-                        onChange={(e) => setNewInvNum(e.target.value)}
-                        placeholder="e.g. MM-2026-001"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Billing Client Name (Logo & PDF Header)</label>
-                      <input
-                        type="text"
-                        required
-                        value={newInvClientName}
-                        onChange={(e) => setNewInvClientName(e.target.value)}
-                        placeholder="e.g. Metric Air Limited"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Billing Contact / Attention</label>
-                      <input
-                        type="text"
-                        required
-                        value={newInvClientAttention}
-                        onChange={(e) => setNewInvClientAttention(e.target.value)}
-                        placeholder="e.g. Tejinder Singh"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Billing Email Address</label>
-                      <input
-                        type="email"
-                        required
-                        value={newInvClientEmail}
-                        onChange={(e) => setNewInvClientEmail(e.target.value)}
-                        placeholder="e.g. billing@metricair.com"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">CRA Business Number</label>
-                      <input
-                        type="text"
-                        value={newInvCraNumber}
-                        onChange={(e) => setNewInvCraNumber(e.target.value)}
-                        placeholder="e.g. 777790411"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">HST Registration No.</label>
-                      <input
-                        type="text"
-                        value={newInvHstNumber}
-                        onChange={(e) => setNewInvHstNumber(e.target.value)}
-                        placeholder="e.g. 777790411 RT 0001"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div className="pt-2 border-t border-dashed border-sky-100 mt-2">
-                      <h4 className="text-[9px] font-black uppercase text-sky-400 tracking-wider mb-2">Sender (From) Customization</h4>
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Sender Company Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={newInvFromCompany}
-                        onChange={(e) => setNewInvFromCompany(e.target.value)}
-                        placeholder="e.g. 14689941 Canada Inc."
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Sender Brand/Operating Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={newInvFromBrand}
-                        onChange={(e) => setNewInvFromBrand(e.target.value)}
-                        placeholder="e.g. Operating as Monk Media"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Sender Email Address</label>
-                      <input
-                        type="email"
-                        required
-                        value={newInvFromEmail}
-                        onChange={(e) => setNewInvFromEmail(e.target.value)}
-                        placeholder="e.g. info@monkmedia.ca"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Invoice Item / Description</label>
-                      <input
-                        type="text"
-                        required
-                        value={newInvDescription}
-                        onChange={(e) => setNewInvDescription(e.target.value)}
-                        placeholder="e.g. Software and App Development"
-                        className="w-full p-2 border border-sky-100 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sky-500 mb-1">Base Amount ($)</label>
+                      <label className="block text-sky-500 mb-1">Monthly Retainer ($)</label>
                       <input
                         type="number"
-                        required
-                        value={newInvAmount}
-                        onChange={(e) => setNewInvAmount(e.target.value)}
-                        placeholder="e.g. 1500"
+                        defaultValue={client.financials?.monthlyRetainer || 0}
+                        onBlur={(e) => handleUpdateClient({ "financials.monthlyRetainer": Number(e.target.value) || 0 })}
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
                     </div>
                     <div>
-                      <label className="block text-sky-500 mb-1">Due Date</label>
+                      <label className="block text-sky-500 mb-1">GST/Tax Number</label>
                       <input
-                        type="date"
-                        required
-                        value={newInvDue}
-                        onChange={(e) => setNewInvDue(e.target.value)}
+                        type="text"
+                        defaultValue={client.financials?.gstNumber || ""}
+                        onBlur={(e) => handleUpdateClient({ "financials.gstNumber": e.target.value })}
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
                     </div>
-                    <div className="flex items-center gap-2 py-1">
+                    <div>
+                      <label className="block text-sky-500 mb-1">Billing Email</label>
                       <input
-                        type="checkbox"
-                        id="newInvIncludeHST"
-                        checked={newInvIncludeHST}
-                        onChange={(e) => setNewInvIncludeHST(e.target.checked)}
-                        className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
+                        type="email"
+                        defaultValue={client.financials?.billingEmail || ""}
+                        onBlur={(e) => handleUpdateClient({ "financials.billingEmail": e.target.value })}
+                        className="w-full p-2 border border-sky-100 rounded-xl"
                       />
-                      <label htmlFor="newInvIncludeHST" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
-                        Include HST / Tax (13%)
-                      </label>
                     </div>
-                    <button
-                      type="submit"
-                      className="w-full py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-bold transition-all shadow"
-                    >
-                      Log Invoice
-                    </button>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Frequency</label>
+                      <select
+                        defaultValue={client.financials?.paymentFrequency || "Monthly"}
+                        onChange={(e) => handleUpdateClient({ "financials.paymentFrequency": e.target.value })}
+                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                      >
+                        <option value="One-Time">One-Time</option>
+                        <option value="Weekly">Weekly</option>
+                        <option value="Bi-Weekly">Bi-Weekly</option>
+                        <option value="Monthly">Monthly</option>
+                      </select>
+                    </div>
                   </div>
-                </form>
+                </div>
+              )}
 
+              {/* Invoicing Section */}
+              <div className="w-full">
+                
                 {/* Invoice listing */}
-                <div className="lg:col-span-2 bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden flex flex-col">
+                <div className="col-span-full bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden flex flex-col">
                   <div className="p-4 bg-sky-50/20 border-b border-sky-100">
                     <h3 className="text-sm font-bold text-sky-600">Client Invoices</h3>
                   </div>
@@ -2178,7 +2219,7 @@ export default function ClientProfilePage() {
                               </td>
                               <td className="p-3 px-4 text-right font-bold">${Number(inv.total).toLocaleString()}</td>
                               <td className="p-3 px-4 text-right">
-                                {inv.status !== "Received" && inv.status !== "Paid" && (
+                                {role !== "client" && inv.status !== "Received" && inv.status !== "Paid" && (
                                   <button
                                     onClick={async () => {
                                       const invRef = doc(db, "invoices", inv.id);
@@ -2326,46 +2367,48 @@ export default function ClientProfilePage() {
             <div className="space-y-6">
               
               {/* Document upload form */}
-              <form onSubmit={handleFileUpload} className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
-                <h3 className="text-sm font-bold text-sky-600">Upload Logo, Contract or brand collateral</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-semibold items-end">
-                  <div>
-                    <label className="block text-sky-500 mb-1">Document Category</label>
-                    <select
-                      value={docCategory}
-                      onChange={(e) => setDocCategory(e.target.value)}
-                      className="w-full p-2 border border-sky-100 rounded-xl"
-                    >
-                      <option value="Logo">Logo</option>
-                      <option value="Logo Transparent">Logo Transparent</option>
-                      <option value="Brand Guide">Brand Guide</option>
-                      <option value="Contracts">Contracts</option>
-                      <option value="Proposals">Proposals</option>
-                      <option value="Receipts">Receipts</option>
-                      <option value="Raw Footage">Raw Footage</option>
-                    </select>
+              {role !== "client" && (
+                <form onSubmit={handleFileUpload} className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
+                  <h3 className="text-sm font-bold text-sky-600">Upload Logo, Contract or brand collateral</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-semibold items-end">
+                    <div>
+                      <label className="block text-sky-500 mb-1">Document Category</label>
+                      <select
+                        value={docCategory}
+                        onChange={(e) => setDocCategory(e.target.value)}
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      >
+                        <option value="Logo">Logo</option>
+                        <option value="Logo Transparent">Logo Transparent</option>
+                        <option value="Brand Guide">Brand Guide</option>
+                        <option value="Contracts">Contracts</option>
+                        <option value="Proposals">Proposals</option>
+                        <option value="Receipts">Receipts</option>
+                        <option value="Raw Footage">Raw Footage</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Select File</label>
+                      <input
+                        type="file"
+                        required
+                        onChange={(e) => setUploadFile(e.target.files[0])}
+                        className="w-full p-1.5 border border-sky-100 rounded-xl text-[10px]"
+                      />
+                    </div>
+                    <div>
+                      <button
+                        type="submit"
+                        disabled={uploadLoading}
+                        className="w-full py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-bold flex items-center justify-center gap-1 shadow disabled:opacity-50"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        {uploadLoading ? "Uploading..." : "Upload Document"}
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sky-500 mb-1">Select File</label>
-                    <input
-                      type="file"
-                      required
-                      onChange={(e) => setUploadFile(e.target.files[0])}
-                      className="w-full p-1.5 border border-sky-100 rounded-xl text-[10px]"
-                    />
-                  </div>
-                  <div>
-                    <button
-                      type="submit"
-                      disabled={uploadLoading}
-                      className="w-full py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-bold flex items-center justify-center gap-1 shadow disabled:opacity-50"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      {uploadLoading ? "Uploading..." : "Upload Document"}
-                    </button>
-                  </div>
-                </div>
-              </form>
+                </form>
+              )}
 
               {/* Document Registry Table */}
               <div className="p-6 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
@@ -2450,14 +2493,16 @@ export default function ClientProfilePage() {
                                     <FileDown className="w-3.5 h-3.5" />
                                     Download
                                   </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteDocument(doc.id)}
-                                    className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                    title="Delete Document"
-                                  >
-                                    <Trash className="w-4 h-4" />
-                                  </button>
+                                  {role !== "client" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDocument(doc.id)}
+                                      className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                      title="Delete Document"
+                                    >
+                                      <Trash className="w-4 h-4" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -2570,59 +2615,63 @@ export default function ClientProfilePage() {
                   <div className="text-sky-400 text-xs font-semibold">
                     No onboarding checklist registered for this client.
                   </div>
-                  <button
-                    onClick={handleInitializeChecklist}
-                    className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl transition-all shadow"
-                  >
-                    Initialize Onboarding Checklist
-                  </button>
+                  {role !== "client" && (
+                    <button
+                      onClick={handleInitializeChecklist}
+                      className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl transition-all shadow"
+                    >
+                      Initialize Onboarding Checklist
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-6">
                   
                   {/* Step 1: Checklist Selector Grid */}
-                  <div className="p-6 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
-                    <div className="pb-2 border-b border-sky-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-bold text-sky-600">1. Select Milestones to Track</h3>
-                        <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Toggle tasks from the 17 core agency steps</p>
+                  {role !== "client" && (
+                    <div className="p-6 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
+                      <div className="pb-2 border-b border-sky-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-sky-600">1. Select Milestones to Track</h3>
+                          <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Toggle tasks from the 17 core agency steps</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSaveSelection}
+                          className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl transition-all shadow self-end sm:self-auto"
+                        >
+                          Save Selection to Table
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleSaveSelection}
-                        className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl transition-all shadow self-end sm:self-auto"
-                      >
-                        Save Selection to Table
-                      </button>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {checklist.items && checklist.items.map((item) => {
-                        const isSelected = selectedKeys.includes(item.id);
-                        return (
-                          <button
-                            type="button"
-                            key={item.id}
-                            onClick={() => handleToggleSelectKey(item.id)}
-                            className={`p-3 rounded-2xl border text-xs text-left flex items-center justify-between font-semibold transition-all ${
-                              isSelected
-                                ? "bg-sky-50 border-sky-200 text-sky-600"
-                                : "bg-white border-sky-100 text-sky-400 hover:bg-sky-50/10"
-                            }`}
-                          >
-                            <span>{item.label}</span>
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                              isSelected
-                                ? "bg-sky-500 border-sky-500 text-white"
-                                : "border-sky-200 bg-white"
-                            }`}>
-                              {isSelected && <Check className="w-3 h-3" />}
-                            </div>
-                          </button>
-                        );
-                      })}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {checklist.items && checklist.items.map((item) => {
+                          const isSelected = selectedKeys.includes(item.id);
+                          return (
+                            <button
+                              type="button"
+                              key={item.id}
+                              onClick={() => handleToggleSelectKey(item.id)}
+                              className={`p-3 rounded-2xl border text-xs text-left flex items-center justify-between font-semibold transition-all ${
+                                isSelected
+                                  ? "bg-sky-50 border-sky-200 text-sky-600"
+                                  : "bg-white border-sky-100 text-sky-400 hover:bg-sky-50/10"
+                              }`}
+                            >
+                              <span>{item.label}</span>
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                                isSelected
+                                  ? "bg-sky-500 border-sky-500 text-white"
+                                  : "border-sky-200 bg-white"
+                              }`}>
+                                {isSelected && <Check className="w-3 h-3" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Step 2: Tracked Milestones CRUD Table */}
                   {(() => {
@@ -2664,7 +2713,7 @@ export default function ClientProfilePage() {
                                   <th className="p-4 px-6 min-w-[150px]">Project</th>
                                   <th className="p-4 px-6 min-w-[220px]">Project Details</th>
                                   <th className="p-4 px-6 min-w-[180px]">Notes</th>
-                                  <th className="p-4 px-6 text-right w-24">Actions</th>
+                                  {role !== "client" && <th className="p-4 px-6 text-right w-24">Actions</th>}
                                 </tr>
                               </thead>
                               <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
@@ -2687,9 +2736,14 @@ export default function ClientProfilePage() {
                                         <td className="p-4 px-6">
                                           <button
                                             type="button"
-                                            onClick={() => handleToggleItem(item.id, !isChecked)}
+                                            onClick={() => {
+                                              if (role === "client") return;
+                                              handleToggleItem(item.id, !isChecked);
+                                            }}
                                             className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
-                                              isChecked ? "bg-sky-500 border-sky-500 text-white" : "border-sky-200 bg-white hover:border-sky-300"
+                                              role === "client" ? "cursor-default " : "hover:border-sky-300 "
+                                            }${
+                                              isChecked ? "bg-sky-500 border-sky-500 text-white" : "border-sky-200 bg-white"
                                             }`}
                                           >
                                             {isChecked && <Check className="w-3.5 h-3.5" />}
@@ -2754,52 +2808,54 @@ export default function ClientProfilePage() {
                                         </td>
 
                                         {/* Actions */}
-                                        <td className="p-4 px-6 text-right">
-                                          <div className="flex items-center justify-end gap-1.5">
-                                            {isEditing ? (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={handleSaveRow}
-                                                  className="p-1.5 rounded-lg text-green-500 hover:bg-green-50 transition-colors"
-                                                  title="Save Row"
-                                                >
-                                                  <Save className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setEditingRowId(null);
-                                                    setEditRowData(null);
-                                                  }}
-                                                  className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 transition-colors"
-                                                  title="Cancel"
-                                                >
-                                                  <X className="w-3.5 h-3.5" />
-                                                </button>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleStartEditRow(item)}
-                                                  className="p-1.5 rounded-lg text-sky-500 hover:bg-sky-50 transition-colors"
-                                                  title="Edit Notes & Project"
-                                                >
-                                                  <Edit className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleRemoveTrackedItem(item.id)}
-                                                  className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                  title="Remove from tracking table"
-                                                >
-                                                  <Trash className="w-3.5 h-3.5" />
-                                                </button>
-                                              </>
-                                            )}
-                                          </div>
-                                        </td>
+                                        {role !== "client" && (
+                                          <td className="p-4 px-6 text-right">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                              {isEditing ? (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={handleSaveRow}
+                                                    className="p-1.5 rounded-lg text-green-500 hover:bg-green-50 transition-colors"
+                                                    title="Save Row"
+                                                  >
+                                                    <Save className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setEditingRowId(null);
+                                                      setEditRowData(null);
+                                                    }}
+                                                    className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 transition-colors"
+                                                    title="Cancel"
+                                                  >
+                                                    <X className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleStartEditRow(item)}
+                                                    className="p-1.5 rounded-lg text-sky-500 hover:bg-sky-50 transition-colors"
+                                                    title="Edit Notes & Project"
+                                                  >
+                                                    <Edit className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveTrackedItem(item.id)}
+                                                    className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                    title="Remove from tracking table"
+                                                  >
+                                                    <Trash className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </>
+                                              )}
+                                            </div>
+                                          </td>
+                                        )}
                                       </tr>
                                     );
                                   })

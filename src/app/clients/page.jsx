@@ -29,6 +29,14 @@ export default function ClientsPage() {
   const [clientStatus, setClientStatus] = useState("Active");
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
+
+  // Initial Project Configuration States
+  const [initialProjType, setInitialProjType] = useState("Social Media");
+  const [initialProjBillingType, setInitialProjBillingType] = useState("One-Time");
+  const [initialProjVal, setInitialProjVal] = useState("");
+  const [initialProjStartDate, setInitialProjStartDate] = useState("");
+  const [initialProjEndDate, setInitialProjEndDate] = useState("");
+  const [initialProjManager, setInitialProjManager] = useState("");
   
   // New optional fields
   const [retainerStartDate, setRetainerStartDate] = useState(new Date().toISOString().split("T")[0]);
@@ -180,16 +188,18 @@ export default function ClientsPage() {
         const projectPayload = {
           name: initialProjName.trim(),
           clientId: docRef.id,
-          type: "Social Media",
+          type: initialProjType,
+          billingType: initialProjBillingType,
           description: initialProjDescription || "",
-          startDate: retainerStartDate || new Date().toISOString().split("T")[0],
-          deadline: "",
+          startDate: initialProjStartDate || onboardingDate,
+          endDate: initialProjEndDate || "",
+          deadline: initialProjEndDate || "",
           completionDate: "",
-          value: Number(monthlyRetainer) || 0,
+          value: Number(initialProjVal) || 0,
           estimatedCost: 0,
           actualCost: 0,
           profit: 0,
-          projectManager: assignedManager || currentUser?.uid,
+          projectManager: initialProjManager || assignedManager || currentUser?.uid,
           assignedTeam: [],
           status: "Planned",
           priority: "Medium",
@@ -233,6 +243,12 @@ export default function ClientsPage() {
       setRetainerStartDate(new Date().toISOString().split("T")[0]);
       setClientNotes("");
       setInitialProjName("");
+      setInitialProjType("Social Media");
+      setInitialProjBillingType("One-Time");
+      setInitialProjVal("");
+      setInitialProjStartDate("");
+      setInitialProjEndDate("");
+      setInitialProjManager("");
       setInitialProjDescription("");
       setDriveLinks([]);
       setDrawerOpen(false);
@@ -375,7 +391,7 @@ export default function ClientsPage() {
                       <td className="py-4.5 px-6 capitalize">{c.industry}</td>
                       <td className="py-4.5 px-6">{c.dateJoined}</td>
                       <td className="py-4.5 px-6 text-sky-600 font-semibold">
-                        {(role === "admin" || role === "manager")
+                        {(role === "admin" || role === "manager" || role === "client")
                           ? `$${(c.financials?.monthlyRetainer || 0).toLocaleString()}`
                           : "—"}
                       </td>
@@ -513,10 +529,9 @@ export default function ClientsPage() {
                         value={industry}
                         onChange={(e) => setIndustry(e.target.value)}
                         placeholder="e.g. Retail, Real Estate"
-                        className="w-full px-3 py-2 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all"
+                        className="w-full px-3 py-2 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
                       />
                     </div>
-
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
                         Monthly Retainer ($)
@@ -526,7 +541,7 @@ export default function ClientsPage() {
                         value={monthlyRetainer}
                         onChange={(e) => setMonthlyRetainer(e.target.value)}
                         placeholder="e.g. 1500"
-                        className="w-full px-3 py-2 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all"
+                        className="w-full px-3 py-2 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
                       />
                     </div>
                   </div>
@@ -590,11 +605,15 @@ export default function ClientsPage() {
                     />
                   </div>
 
-                  <div className="pt-4 border-t border-sky-100">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-sky-500 mb-2">Initial Project Campaign</h4>
-                    <div className="space-y-3">
+                  <div className="pt-4 border-t border-sky-100 space-y-4">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-sky-500">Initial Project Campaign</h4>
+                      <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Directly register client's first campaign</p>
+                    </div>
+
+                    <div className="space-y-4 bg-sky-50/20 p-4 rounded-3xl border border-sky-100/50">
                       <div>
-                        <label className="block text-[10px] font-bold text-sky-400 mb-1">Project Name</label>
+                        <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Project Name</label>
                         <input
                           type="text"
                           value={initialProjName}
@@ -603,16 +622,100 @@ export default function ClientsPage() {
                           className="w-full px-3 py-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
                         />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-sky-400 mb-1">Project Description / Info</label>
-                        <textarea
-                          rows={2}
-                          value={initialProjDescription}
-                          onChange={(e) => setInitialProjDescription(e.target.value)}
-                          placeholder="Deliverables, scope, details... (Optional)"
-                          className="w-full p-2.5 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
-                        />
-                      </div>
+
+                      {initialProjName.trim() && (
+                        <div className="space-y-4 pt-1 animate-fadeIn">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Project Type</label>
+                              <select
+                                value={initialProjType}
+                                onChange={(e) => setInitialProjType(e.target.value)}
+                                className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none animate-fadeIn"
+                              >
+                                <option value="Social Media">Social Media</option>
+                                <option value="Video Shoot">Video Production</option>
+                                <option value="Web Development">Web Development</option>
+                                <option value="Ad Campaign">Ad Campaign</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Billing Model</label>
+                              <select
+                                value={initialProjBillingType}
+                                onChange={(e) => setInitialProjBillingType(e.target.value)}
+                                className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                              >
+                                <option value="One-Time">One-Time Project</option>
+                                <option value="Retainer">Monthly Retainer</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Value / Rate ($)</label>
+                              <input
+                                type="number"
+                                value={initialProjVal}
+                                onChange={(e) => setInitialProjVal(e.target.value)}
+                                placeholder="e.g. 1500"
+                                className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Project Manager</label>
+                              <select
+                                value={initialProjManager}
+                                onChange={(e) => setInitialProjManager(e.target.value)}
+                                className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                              >
+                                <option value="">Assign to yourself</option>
+                                {managers.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Start Date</label>
+                              <input
+                                type="date"
+                                value={initialProjStartDate}
+                                onChange={(e) => setInitialProjStartDate(e.target.value)}
+                                className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">End Date / Deadline</label>
+                              <input
+                                type="date"
+                                value={initialProjEndDate}
+                                onChange={(e) => setInitialProjEndDate(e.target.value)}
+                                className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Project Description</label>
+                            <textarea
+                              rows={2}
+                              value={initialProjDescription}
+                              onChange={(e) => setInitialProjDescription(e.target.value)}
+                              placeholder="Deliverables, scope, details..."
+                              className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
