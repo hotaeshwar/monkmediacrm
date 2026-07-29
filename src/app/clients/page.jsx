@@ -364,7 +364,7 @@ export default function ClientsPage() {
                   {filteredClients.map((c) => (
                     <tr key={c.id} className="hover:bg-sky-50/20 transition-colors">
                       <td className="py-4.5 px-6">
-                        <Link href={`/clients/${c.id}`} className="font-bold text-sky-600 hover:underline">
+                        <Link href={`/clients/profile?id=${c.id}`} className="font-bold text-sky-600 hover:underline">
                           {c.businessName}
                         </Link>
                       </td>
@@ -404,7 +404,7 @@ export default function ClientsPage() {
                       <td className="py-4.5 px-6 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Link
-                            href={`/clients/${c.id}`}
+                            href={`/clients/profile?id=${c.id}`}
                             className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl text-xs font-bold transition-all"
                           >
                             View Profile

@@ -15,7 +15,7 @@ import {
   onSnapshot,
   deleteDoc
 } from "firebase/firestore";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Briefcase,
@@ -40,7 +40,8 @@ import {
 } from "lucide-react";
 
 export default function ClientProfilePage() {
-  const { id } = useParams();
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id");
   const { currentUser, role, loading: authLoading } = useAuth();
   const router = useRouter();
 

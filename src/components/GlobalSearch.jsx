@@ -237,7 +237,7 @@ export default function GlobalSearch() {
                     {results.clients.map((c) => (
                       <button
                         key={c.id}
-                        onClick={() => handleNavigate(`/clients/${c.id}`)}
+                        onClick={() => handleNavigate(`/clients/profile?id=${c.id}`)}
                         className="w-full flex items-center justify-between text-left p-2.5 rounded-xl hover:bg-sky-50 text-sky-600 transition-colors"
                       >
                         <div className="flex items-center gap-2.5">
