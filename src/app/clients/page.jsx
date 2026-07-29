@@ -29,6 +29,13 @@ export default function ClientsPage() {
   const [clientStatus, setClientStatus] = useState("Active");
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
+  
+  // New optional fields
+  const [retainerStartDate, setRetainerStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [clientNotes, setClientNotes] = useState("");
+  const [initialProjName, setInitialProjName] = useState("");
+  const [initialProjDescription, setInitialProjDescription] = useState("");
+  const [driveLinks, setDriveLinks] = useState([]); // Array of { title: "", url: "" }
 
   const handleDeleteClient = async (clientId) => {
     if (!confirm("Are you sure you want to delete this client? This will delete their profile from the registry.")) {
@@ -107,16 +114,26 @@ export default function ClientsPage() {
     setFormLoading(true);
 
     try {
-      if (!businessName || !contactPerson || !email) {
-        throw new Error("Business Name, Contact Person, and Email are required.");
-      }
+      const finalBusinessName = businessName.trim() || "Unnamed Client";
+      const validLinks = driveLinks
+        .filter((link) => link.url.trim() !== "")
+        .map((link) => ({
+          title: link.title.trim() || "Drive Link",
+          url: link.url.trim(),
+        }));
+
+      const onboardingDate = retainerStartDate || new Date().toISOString().split("T")[0];
+      const start = new Date(onboardingDate + "T12:00:00");
+      const nextMonth = new Date(start.getFullYear(), start.getMonth() + 1, start.getDate());
+      const nextPaymentDateStr = nextMonth.toISOString().split("T")[0];
+      const dueDateStr = String(start.getDate());
 
       const clientPayload = {
-        businessName,
-        legalName: businessName,
-        contactPerson,
+        businessName: finalBusinessName,
+        legalName: finalBusinessName,
+        contactPerson: contactPerson || "",
         phone: phone || "",
-        email,
+        email: email || "",
         secondaryContact: "",
         website: "",
         address: "",
@@ -125,38 +142,63 @@ export default function ClientsPage() {
         postalCode: "",
         industry: industry || "Other",
         status: clientStatus,
-        dateJoined: new Date().toISOString().split("T")[0],
+        dateJoined: onboardingDate,
         accountManager: assignedManager || currentUser?.uid,
         leadSource: "Direct",
-        notes: "",
+        notes: clientNotes || "",
         logoUrl: "",
         logoTransparentUrl: "",
         services: [],
         deliverables: "",
-        accountLinks: [],
+        accountLinks: validLinks,
         assignedTeam: [],
         financials: {
           monthlyRetainer: Number(monthlyRetainer) || 0,
           oneTimeProjectValue: 0,
           paymentFrequency: "Monthly",
-          dueDate: "1",
-          contractStart: new Date().toISOString().split("T")[0],
+          dueDate: dueDateStr,
+          contractStart: onboardingDate,
           contractEnd: "",
           taxRate: 13,
           gstNumber: "",
-          billingEmail: email,
+          billingEmail: email || "",
           paymentMethod: "Credit Card",
           depositRequired: false,
           depositReceived: 0,
           totalPaid: 0,
           totalOutstanding: 0,
-          nextPaymentDate: "",
+          nextPaymentDate: nextPaymentDateStr,
           lastPaymentDate: "",
         },
       };
 
       // Add to Firestore
       const docRef = await addDoc(collection(db, "clients"), clientPayload);
+
+      // Create an initial project if specified
+      if (initialProjName.trim()) {
+        const projectPayload = {
+          name: initialProjName.trim(),
+          clientId: docRef.id,
+          type: "Social Media",
+          description: initialProjDescription || "",
+          startDate: retainerStartDate || new Date().toISOString().split("T")[0],
+          deadline: "",
+          completionDate: "",
+          value: Number(monthlyRetainer) || 0,
+          estimatedCost: 0,
+          actualCost: 0,
+          profit: 0,
+          projectManager: assignedManager || currentUser?.uid,
+          assignedTeam: [],
+          status: "Planned",
+          priority: "Medium",
+          progressPercent: 0,
+          driveFolder: validLinks.length > 0 ? validLinks[0].url : "",
+          notes: "",
+        };
+        await addDoc(collection(db, "projects"), projectPayload);
+      }
 
       // Initialize an empty onboarding checklist document for this client
       await addDoc(collection(db, "onboardingChecklists"), {
@@ -188,6 +230,11 @@ export default function ClientsPage() {
       setIndustry("");
       setAssignedManager("");
       setMonthlyRetainer("");
+      setRetainerStartDate(new Date().toISOString().split("T")[0]);
+      setClientNotes("");
+      setInitialProjName("");
+      setInitialProjDescription("");
+      setDriveLinks([]);
       setDrawerOpen(false);
 
       // Refresh list
@@ -410,10 +457,9 @@ export default function ClientsPage() {
                     </label>
                     <input
                       type="text"
-                      required
                       value={businessName}
                       onChange={(e) => setBusinessName(e.target.value)}
-                      placeholder="e.g. Monk Media Inc."
+                      placeholder="e.g. Monk Media Inc. (Optional)"
                       className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
                     />
                   </div>
@@ -424,10 +470,9 @@ export default function ClientsPage() {
                     </label>
                     <input
                       type="text"
-                      required
                       value={contactPerson}
                       onChange={(e) => setContactPerson(e.target.value)}
-                      placeholder="e.g. Simran Singh"
+                      placeholder="e.g. Simran Singh (Optional)"
                       className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
                     />
                   </div>
@@ -438,10 +483,9 @@ export default function ClientsPage() {
                     </label>
                     <input
                       type="email"
-                      required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="billing@client.com"
+                      placeholder="billing@client.com (Optional)"
                       className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
                     />
                   </div>
@@ -519,6 +563,109 @@ export default function ClientsPage() {
                       <option value="Active">Active</option>
                       <option value="Paused">Paused</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Retainer Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={retainerStartDate}
+                      onChange={(e) => setRetainerStartDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Client Notes
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={clientNotes}
+                      onChange={(e) => setClientNotes(e.target.value)}
+                      placeholder="Enter strategy guidelines, notes, etc. (Optional)"
+                      className="w-full p-3 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none"
+                    />
+                  </div>
+
+                  <div className="pt-4 border-t border-sky-100">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-sky-500 mb-2">Initial Project Campaign</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-sky-400 mb-1">Project Name</label>
+                        <input
+                          type="text"
+                          value={initialProjName}
+                          onChange={(e) => setInitialProjName(e.target.value)}
+                          placeholder="e.g. Winter Shoot (Optional)"
+                          className="w-full px-3 py-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-sky-400 mb-1">Project Description / Info</label>
+                        <textarea
+                          rows={2}
+                          value={initialProjDescription}
+                          onChange={(e) => setInitialProjDescription(e.target.value)}
+                          placeholder="Deliverables, scope, details... (Optional)"
+                          className="w-full p-2.5 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-sky-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-sky-500">Drive Links (Optional)</h4>
+                      <button
+                        type="button"
+                        onClick={() => setDriveLinks([...driveLinks, { title: "", url: "" }])}
+                        className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl text-[10px] font-bold transition-all"
+                      >
+                        + Add Link
+                      </button>
+                    </div>
+                    {driveLinks.length === 0 ? (
+                      <p className="text-[10px] text-sky-300 italic">No custom drive links added yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {driveLinks.map((lnk, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              value={lnk.title}
+                              onChange={(e) => {
+                                const next = [...driveLinks];
+                                next[idx].title = e.target.value;
+                                setDriveLinks(next);
+                              }}
+                              placeholder="Name e.g. Assets Folder"
+                              className="w-1/3 px-3 py-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                            />
+                            <input
+                              type="url"
+                              value={lnk.url}
+                              onChange={(e) => {
+                                const next = [...driveLinks];
+                                next[idx].url = e.target.value;
+                                setDriveLinks(next);
+                              }}
+                              placeholder="https://drive.google.com/..."
+                              className="flex-1 px-3 py-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setDriveLinks(driveLinks.filter((_, i) => i !== idx))}
+                              className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg text-xs"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-4 border-t border-sky-50 flex justify-end gap-2">

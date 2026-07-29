@@ -86,22 +86,53 @@ export default function Dashboard() {
 
     setLoading(true);
 
+    let loadedClients = false;
+    let loadedProjects = false;
+    let loadedTasks = false;
+    let loadedLeads = role !== "admin" && role !== "manager";
+    let loadedInvoices = role !== "admin" && role !== "manager";
+    let loadedExpenses = role !== "admin" && role !== "manager";
+
+    const checkAllLoaded = () => {
+      if (loadedClients && loadedProjects && loadedTasks && loadedLeads && loadedInvoices && loadedExpenses) {
+        setLoading(false);
+      }
+    };
+
     const unsubClients = onSnapshot(collection(db, "clients"), (snap) => {
       const list = [];
       snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
       setClients(list);
+      loadedClients = true;
+      checkAllLoaded();
+    }, (err) => {
+      console.error("Clients sync error:", err);
+      loadedClients = true;
+      checkAllLoaded();
     });
 
     const unsubProjects = onSnapshot(collection(db, "projects"), (snap) => {
       const list = [];
       snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
       setProjects(list);
+      loadedProjects = true;
+      checkAllLoaded();
+    }, (err) => {
+      console.error("Projects sync error:", err);
+      loadedProjects = true;
+      checkAllLoaded();
     });
 
     const unsubTasks = onSnapshot(collection(db, "tasks"), (snap) => {
       const list = [];
       snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
       setTasks(list);
+      loadedTasks = true;
+      checkAllLoaded();
+    }, (err) => {
+      console.error("Tasks sync error:", err);
+      loadedTasks = true;
+      checkAllLoaded();
     });
 
     let unsubLeads = () => {};
@@ -113,22 +144,38 @@ export default function Dashboard() {
         const list = [];
         snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
         setLeads(list);
+        loadedLeads = true;
+        checkAllLoaded();
+      }, (err) => {
+        console.error("Leads sync error:", err);
+        loadedLeads = true;
+        checkAllLoaded();
       });
 
       unsubInvoices = onSnapshot(collection(db, "invoices"), (snap) => {
         const list = [];
         snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
         setInvoices(list);
+        loadedInvoices = true;
+        checkAllLoaded();
+      }, (err) => {
+        console.error("Invoices sync error:", err);
+        loadedInvoices = true;
+        checkAllLoaded();
       });
 
       unsubExpenses = onSnapshot(collection(db, "expenses"), (snap) => {
         const list = [];
         snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
         setExpenses(list);
+        loadedExpenses = true;
+        checkAllLoaded();
+      }, (err) => {
+        console.error("Expenses sync error:", err);
+        loadedExpenses = true;
+        checkAllLoaded();
       });
     }
-
-    setLoading(false);
 
     return () => {
       unsubClients();
@@ -225,6 +272,7 @@ export default function Dashboard() {
   let outstandingPayments = 0;
   let overduePayments = 0;
   let monthlyExpenses = 0;
+  let additionalInvoicesRevenue = 0;
 
   if (role === "admin" || role === "manager") {
     // MRR = sum of active clients' retainer
@@ -237,6 +285,19 @@ export default function Dashboard() {
       const invDate = new Date(inv.invoiceDate || inv.dueDate);
       if (invDate.getMonth() === now.getMonth() && invDate.getFullYear() === now.getFullYear()) {
         return acc + (Number(inv.amountPaid) || 0);
+      }
+      return acc;
+    }, 0);
+
+    // Additional manual/project invoices created this month (excluding recurring ones)
+    additionalInvoicesRevenue = scopedInvoices.reduce((acc, inv) => {
+      if (!inv.invoiceDate) return acc;
+      const invDate = new Date(inv.invoiceDate);
+      const isCurrentMonth = invDate.getMonth() === now.getMonth() && invDate.getFullYear() === now.getFullYear();
+      const isRecurring = String(inv.invoiceNumber || "").startsWith("REC-") || String(inv.notes || "").toLowerCase().includes("recurring");
+      
+      if (isCurrentMonth && !isRecurring) {
+        return acc + (Number(inv.amount) || 0);
       }
       return acc;
     }, 0);
@@ -267,7 +328,7 @@ export default function Dashboard() {
   }
 
   const estimatedProfit = (role === "admin" || role === "manager")
-    ? (mrr + revenueReceivedThisMonth) - monthlyExpenses
+    ? (mrr + additionalInvoicesRevenue) - monthlyExpenses
     : 0;
 
   // 3. Chart Data Preparation

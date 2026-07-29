@@ -6,12 +6,13 @@ import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
 import GlobalReminders from "@/components/GlobalReminders";
+import GlobalPayments from "@/components/GlobalPayments";
 
 export default function ClientLayout({ children }) {
   const pathname = usePathname();
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   // Auto-collapse sidebar on smaller screens
@@ -28,11 +29,11 @@ export default function ClientLayout({ children }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Splash screen 3 seconds duration
+  // Splash screen 0.5 seconds duration
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 3000);
+    }, 500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -83,7 +84,7 @@ export default function ClientLayout({ children }) {
               100% { width: 100%; }
             }
             .animate-loader {
-              animation: loader-progress 3s linear forwards;
+              animation: loader-progress 0.5s linear forwards;
             }
             @keyframes fade-in {
               from { opacity: 0; transform: scale(0.95); }
@@ -152,6 +153,7 @@ export default function ClientLayout({ children }) {
       </div>
       {!isAuthPage && <GlobalSearch />}
       {!isAuthPage && <GlobalReminders />}
+      {!isAuthPage && <GlobalPayments />}
 
       {/* Global Toast Container */}
       <div className="fixed top-6 right-6 z-[99999] flex flex-col gap-3 w-full max-w-sm pointer-events-none">

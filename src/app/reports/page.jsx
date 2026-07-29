@@ -349,6 +349,7 @@ export default function ReportsPage() {
 
       await addDoc(collection(db, "payments"), {
         invoiceId: inv1Id,
+        clientId: client1Id,
         amount: 17035.88,
         dateReceived: "2026-07-20",
         method: "Bank Transfer",

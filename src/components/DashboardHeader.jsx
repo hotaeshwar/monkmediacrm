@@ -10,6 +10,7 @@ export default function DashboardHeader() {
   const { currentUser } = useAuth();
   const [userName, setUserName] = useState("Team Member");
   const [currentTime, setCurrentTime] = useState("");
+  const [istTime, setIstTime] = useState("");
   const [currentDate, setCurrentDate] = useState("");
   const [temperature, setTemperature] = useState(null);
   const [city, setCity] = useState("Toronto");
@@ -50,6 +51,15 @@ export default function DashboardHeader() {
       }
 
       setCurrentTime(now.toLocaleTimeString("en-US", timeOpts));
+
+      const istOpts = {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Kolkata",
+      };
+      setIstTime(now.toLocaleTimeString("en-US", istOpts));
 
       const dateOpts = {
         weekday: "long",
@@ -164,10 +174,16 @@ export default function DashboardHeader() {
           <span>{currentDate}</span>
         </div>
 
-        {/* Clock Panel */}
+        {/* Local Clock Panel */}
         <div className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50/50 rounded-2xl border border-sky-100 shadow-sm min-w-[105px]">
           <Clock className="w-4 h-4 text-sky-400" />
           <span>{currentTime}</span>
+        </div>
+
+        {/* IST Clock Panel */}
+        <div className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50/50 rounded-2xl border border-amber-100 text-amber-600 shadow-sm min-w-[125px]">
+          <Clock className="w-4 h-4 text-amber-500" />
+          <span>IST: {istTime}</span>
         </div>
 
         {/* Weather Panel */}

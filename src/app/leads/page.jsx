@@ -140,24 +140,32 @@ export default function LeadsPage() {
         deliverables: "",
         accountLinks: [],
         assignedTeam: [],
-        financials: {
-          monthlyRetainer: 0,
-          oneTimeProjectValue: 0,
-          paymentFrequency: "Monthly",
-          dueDate: "1",
-          contractStart: new Date().toISOString().split("T")[0],
-          contractEnd: "",
-          taxRate: 13,
-          gstNumber: "",
-          billingEmail: lead.contactInfo,
-          paymentMethod: "Credit Card",
-          depositRequired: false,
-          depositReceived: 0,
-          totalPaid: 0,
-          totalOutstanding: 0,
-          nextPaymentDate: "",
-          lastPaymentDate: "",
-        },
+        financials: (() => {
+          const onboardingDate = new Date().toISOString().split("T")[0];
+          const start = new Date(onboardingDate + "T12:00:00");
+          const nextMonth = new Date(start.getFullYear(), start.getMonth() + 1, start.getDate());
+          const nextPaymentDateStr = nextMonth.toISOString().split("T")[0];
+          const dueDateStr = String(start.getDate());
+
+          return {
+            monthlyRetainer: 0,
+            oneTimeProjectValue: 0,
+            paymentFrequency: "Monthly",
+            dueDate: dueDateStr,
+            contractStart: onboardingDate,
+            contractEnd: "",
+            taxRate: 13,
+            gstNumber: "",
+            billingEmail: lead.contactInfo || "",
+            paymentMethod: "Credit Card",
+            depositRequired: false,
+            depositReceived: 0,
+            totalPaid: 0,
+            totalOutstanding: 0,
+            nextPaymentDate: nextPaymentDateStr,
+            lastPaymentDate: "",
+          };
+        })(),
       };
 
       // 1. Add new Client document

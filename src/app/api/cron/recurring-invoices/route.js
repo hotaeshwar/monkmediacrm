@@ -60,10 +60,15 @@ export async function GET(request) {
           total,
           amountPaid: 0,
           balance: total,
-          status: "Sent",
+          status: "Due",
           paymentMethod: financials.paymentMethod || "Credit Card",
           receiptUrl: "",
           notes: "Auto-generated recurring retainer invoice by system cron scheduler.",
+          craNumber: "777790411",
+          hstNumber: "777790411 RT 0001",
+          fromCompanyName: "14689941 Canada Inc.",
+          fromBrandName: "Operating as Monk Media",
+          fromEmail: "info@monkmedia.ca",
         });
 
         // Calculate next billing date based on frequency

@@ -19,7 +19,8 @@ import {
   UserPlus,
   Menu,
   X,
-  FileText
+  FileText,
+  KeyRound
 } from "lucide-react";
 
 export default function Sidebar({ expanded, setExpanded, mobileOpen, setMobileOpen }) {
@@ -39,7 +40,8 @@ export default function Sidebar({ expanded, setExpanded, mobileOpen, setMobileOp
   ];
 
   const adminNavigation = [
-    { name: "Create Team Member", href: "/admin/team/create", icon: UserPlus, roles: ["admin"] }
+    { name: "Create Team Member", href: "/admin/team/create", icon: UserPlus, roles: ["admin"] },
+    { name: "Reset Requests", href: "/admin/password-resets", icon: KeyRound, roles: ["admin"] }
   ];
 
   const filteredNav = navigation.filter(item => item.roles.includes(role || ""));

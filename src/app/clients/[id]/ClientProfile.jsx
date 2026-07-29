@@ -33,7 +33,8 @@ import {
   Globe,
   Share2,
   FileDown,
-  ShieldAlert
+  ShieldAlert,
+  X
 } from "lucide-react";
 
 export default function ClientProfilePage() {
@@ -57,19 +58,72 @@ export default function ClientProfilePage() {
 
   // Form states inside tabs
   const [isEditingClient, setIsEditingClient] = useState(false);
+  const [editData, setEditData] = useState(null);
   const [notesText, setNotesText] = useState("");
   const [teamSelect, setTeamSelect] = useState([]);
   
   // New Project Form
   const [newProjName, setNewProjName] = useState("");
   const [newProjType, setNewProjType] = useState("Marketing");
-  const [newProjDeadline, setNewProjDeadline] = useState("");
+  const [newProjStartDate, setNewProjStartDate] = useState("");
+  const [newProjEndDate, setNewProjEndDate] = useState("");
   const [newProjValue, setNewProjValue] = useState("");
+
+  // Edit Project Form States
+  const [editProjOpen, setEditProjOpen] = useState(false);
+  const [editProjId, setEditProjId] = useState("");
+  const [editProjName, setEditProjName] = useState("");
+  const [editProjType, setEditProjType] = useState("Social Media");
+  const [editProjStartDate, setEditProjStartDate] = useState("");
+  const [editProjEndDate, setEditProjEndDate] = useState("");
+  const [editProjValue, setEditProjValue] = useState("");
+  const [editProjStatus, setEditProjStatus] = useState("Planned");
+  const [editProjProgress, setEditProjProgress] = useState(0);
+  const [editProjDriveFolder, setEditProjDriveFolder] = useState("");
+  const [editProjManager, setEditProjManager] = useState("");
+  const [editProjDescription, setEditProjDescription] = useState("");
+  const [editProjNotes, setEditProjNotes] = useState("");
+
+  // Project Billing Form State
+  const [billProjOpen, setBillProjOpen] = useState(false);
+  const [billProject, setBillProject] = useState(null);
+  const [billInvNum, setBillInvNum] = useState("");
+  const [billInvAmount, setBillInvAmount] = useState("");
+  const [billInvDue, setBillInvDue] = useState("");
+  const [billIncludeHST, setBillIncludeHST] = useState(false);
+  const [billInvDescription, setBillInvDescription] = useState("Software and App Development");
+  const [billClientName, setBillClientName] = useState("");
+  const [billClientAttention, setBillClientAttention] = useState("");
+  const [billClientEmail, setBillClientEmail] = useState("");
+  const [billCraNumber, setBillCraNumber] = useState("");
+  const [billHstNumber, setBillHstNumber] = useState("");
+  const [billFromCompany, setBillFromCompany] = useState("14689941 Canada Inc.");
+  const [billFromBrand, setBillFromBrand] = useState("Operating as Monk Media");
+  const [billFromEmail, setBillFromEmail] = useState("info@monkmedia.ca");
+
+  // Project Payment Form State
+  const [payProjOpen, setPayProjOpen] = useState(false);
+  const [payProject, setPayProject] = useState(null);
+  const [payProjInvoices, setPayProjInvoices] = useState([]);
+  const [paySelectedInvId, setPaySelectedInvId] = useState("");
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("Bank Transfer");
+  const [payNotes, setPayNotes] = useState("");
 
   // New Invoice Form
   const [newInvNum, setNewInvNum] = useState("");
   const [newInvAmount, setNewInvAmount] = useState("");
   const [newInvDue, setNewInvDue] = useState("");
+  const [newInvIncludeHST, setNewInvIncludeHST] = useState(false);
+  const [newInvDescription, setNewInvDescription] = useState("Software and App Development");
+  const [newInvClientName, setNewInvClientName] = useState("");
+  const [newInvClientAttention, setNewInvClientAttention] = useState("");
+  const [newInvClientEmail, setNewInvClientEmail] = useState("");
+  const [newInvCraNumber, setNewInvCraNumber] = useState("");
+  const [newInvHstNumber, setNewInvHstNumber] = useState("");
+  const [newInvFromCompany, setNewInvFromCompany] = useState("14689941 Canada Inc.");
+  const [newInvFromBrand, setNewInvFromBrand] = useState("Operating as Monk Media");
+  const [newInvFromEmail, setNewInvFromEmail] = useState("info@monkmedia.ca");
 
   // New Content Form
   const [newContentTitle, setNewContentTitle] = useState("");
@@ -85,6 +139,15 @@ export default function ClientProfilePage() {
   // New Account Link Form
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
+
+  // Auto-populate custom client fields when client page loads
+  useEffect(() => {
+    if (client) {
+      setNewInvClientName(client.businessName || "");
+      setNewInvClientAttention(client.onboardingContactName || "Tejinder Singh");
+      setNewInvClientEmail(client.email || "");
+    }
+  }, [client]);
 
   useEffect(() => {
     if (!currentUser || authLoading) return;
@@ -230,6 +293,56 @@ export default function ClientProfilePage() {
     }
   };
 
+  const handleStartEdit = () => {
+    setEditData({
+      businessName: client.businessName || "",
+      legalName: client.legalName || "",
+      contactPerson: client.contactPerson || "",
+      email: client.email || "",
+      phone: client.phone || "",
+      website: client.website || "",
+      industry: client.industry || "",
+      monthlyRetainer: client.financials?.monthlyRetainer || 0,
+      contractStart: client.financials?.contractStart || "",
+      notes: client.notes || "",
+    });
+    setIsEditingClient(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      const payload = {
+        businessName: editData.businessName,
+        legalName: editData.legalName,
+        contactPerson: editData.contactPerson,
+        email: editData.email,
+        phone: editData.phone,
+        website: editData.website,
+        industry: editData.industry,
+        notes: editData.notes,
+        "financials.monthlyRetainer": Number(editData.monthlyRetainer) || 0,
+        "financials.contractStart": editData.contractStart || "",
+      };
+      await handleUpdateClient(payload);
+      
+      // Update local client financials state
+      setClient((prev) => ({
+        ...prev,
+        financials: {
+          ...prev.financials,
+          monthlyRetainer: Number(editData.monthlyRetainer) || 0,
+          contractStart: editData.contractStart || "",
+        }
+      }));
+
+      setNotesText(editData.notes || "");
+      setIsEditingClient(false);
+      setEditData(null);
+    } catch (err) {
+      alert("Failed to save changes: " + err.message);
+    }
+  };
+
   // Onboarding Toggle
   const handleToggleChecklist = async (key, val) => {
     if (!checklist) return;
@@ -252,8 +365,9 @@ export default function ClientProfilePage() {
         clientId: id,
         type: newProjType,
         description: "",
-        startDate: new Date().toISOString().split("T")[0],
-        deadline: newProjDeadline || "",
+        startDate: newProjStartDate || new Date().toISOString().split("T")[0],
+        endDate: newProjEndDate || "",
+        deadline: newProjEndDate || "",
         completionDate: "",
         value: Number(newProjValue) || 0,
         estimatedCost: 0,
@@ -270,10 +384,213 @@ export default function ClientProfilePage() {
 
       await addDoc(collection(db, "projects"), payload);
       setNewProjName("");
-      setNewProjDeadline("");
+      setNewProjStartDate("");
+      setNewProjEndDate("");
       setNewProjValue("");
     } catch (err) {
       alert("Error adding project: " + err.message);
+    }
+  };
+
+  const handleStartEditProject = (project) => {
+    setEditProjId(project.id);
+    setEditProjName(project.name || "");
+    setEditProjType(project.type || "Social Media");
+    setEditProjStartDate(project.startDate || "");
+    setEditProjEndDate(project.endDate || project.deadline || "");
+    setEditProjValue(project.value || "");
+    setEditProjStatus(project.status || "Planned");
+    setEditProjProgress(project.progressPercent || 0);
+    setEditProjDriveFolder(project.driveFolder || "");
+    setEditProjManager(project.projectManager || "");
+    setEditProjDescription(project.description || "");
+    setEditProjNotes(project.notes || "");
+    setEditProjOpen(true);
+  };
+
+  const handleUpdateProject = async (e) => {
+    e.preventDefault();
+    if (!editProjName) return;
+
+    try {
+      const payload = {
+        name: editProjName,
+        type: editProjType,
+        startDate: editProjStartDate || "",
+        endDate: editProjEndDate || "",
+        deadline: editProjEndDate || "",
+        value: Number(editProjValue) || 0,
+        status: editProjStatus,
+        progressPercent: Number(editProjProgress) || 0,
+        driveFolder: editProjDriveFolder || "",
+        projectManager: editProjManager || currentUser?.uid,
+        description: editProjDescription || "",
+        notes: editProjNotes || "",
+      };
+
+      const projRef = doc(db, "projects", editProjId);
+      await updateDoc(projRef, payload);
+      setEditProjOpen(false);
+    } catch (err) {
+      alert("Error updating project: " + err.message);
+    }
+  };
+
+  const handleStartBillProject = (project) => {
+    setBillProject(project);
+    const rand = Math.floor(100 + Math.random() * 900);
+    setBillInvNum(`INV-PROJ-${rand}-${Date.now().toString().slice(-4)}`);
+    setBillInvAmount(project.value || "");
+    
+    const due = new Date();
+    due.setDate(due.getDate() + 14);
+    setBillInvDue(due.toISOString().split("T")[0]);
+    setBillIncludeHST(false);
+    setBillInvDescription(`Campaign execution for project "${project.name}"`);
+    if (client) {
+      setBillClientName(client.businessName || "");
+      setBillClientAttention(client.onboardingContactName || "Tejinder Singh");
+      setBillClientEmail(client.email || "");
+      setBillCraNumber("");
+      setBillHstNumber("");
+      setBillFromCompany("14689941 Canada Inc.");
+      setBillFromBrand("Operating as Monk Media");
+      setBillFromEmail("info@monkmedia.ca");
+    }
+    setBillProjOpen(true);
+  };
+
+  const handleBillProject = async (e) => {
+    e.preventDefault();
+    if (!billInvNum || !billInvAmount || !billProject) return;
+
+    try {
+      const amount = Number(billInvAmount);
+      const taxRate = billIncludeHST ? (client.financials?.taxRate || 13) : 0;
+      const tax = Number(((amount * taxRate) / 100).toFixed(2));
+      const total = amount + tax;
+
+      const payload = {
+        invoiceNumber: billInvNum,
+        clientId: id,
+        projectId: billProject.id,
+        invoiceDate: new Date().toISOString().split("T")[0],
+        dueDate: billInvDue || "",
+        amount,
+        tax,
+        total,
+        amountPaid: 0,
+        balance: total,
+        status: "Due",
+        paymentMethod: client.financials?.paymentMethod || "Credit Card",
+        receiptUrl: "",
+        notes: `Project invoice for campaign "${billProject.name}".`,
+        description: billInvDescription || "Software and App Development",
+        clientName: billClientName,
+        clientAttention: billClientAttention,
+        clientEmail: billClientEmail,
+        craNumber: billCraNumber || "",
+        hstNumber: billHstNumber || "",
+        fromCompanyName: billFromCompany || "14689941 Canada Inc.",
+        fromBrandName: billFromBrand || "Operating as Monk Media",
+        fromEmail: billFromEmail || "info@monkmedia.ca",
+      };
+
+      await addDoc(collection(db, "invoices"), payload);
+      setBillProjOpen(false);
+      setBillProject(null);
+      setBillInvDescription("Software and App Development");
+      setBillClientName("");
+      setBillClientAttention("");
+      setBillClientEmail("");
+      setBillCraNumber("");
+      setBillHstNumber("");
+      setBillFromCompany("14689941 Canada Inc.");
+      setBillFromBrand("Operating as Monk Media");
+      setBillFromEmail("info@monkmedia.ca");
+    } catch (err) {
+      alert("Error invoicing project: " + err.message);
+    }
+  };
+
+  const handleStartProjectPayment = async (project) => {
+    setPayProject(project);
+    setPayProjInvoices([]);
+    setPaySelectedInvId("");
+    setPayAmount("");
+    setPayNotes("");
+    
+    try {
+      const q = query(
+        collection(db, "invoices"),
+        where("clientId", "==", project.clientId),
+        where("projectId", "==", project.id)
+      );
+      const snap = await getDocs(q);
+      const list = [];
+      snap.forEach((doc) => {
+        const data = doc.data();
+        if ((Number(data.balance) || 0) > 0) {
+          list.push({ id: doc.id, ...data });
+        }
+      });
+      setPayProjInvoices(list);
+      if (list.length > 0) {
+        setPaySelectedInvId(list[0].id);
+        setPayAmount(list[0].balance);
+      }
+      setPayProjOpen(true);
+    } catch (err) {
+      alert("Error fetching project invoices: " + err.message);
+    }
+  };
+
+  const handleRecordProjectPayment = async (e) => {
+    e.preventDefault();
+    if (!paySelectedInvId || !payAmount || !payProject) return;
+
+    try {
+      const amount = Number(payAmount);
+      const targetInvoice = payProjInvoices.find((i) => i.id === paySelectedInvId);
+      if (!targetInvoice) return;
+
+      const nextPaid = (Number(targetInvoice.amountPaid) || 0) + amount;
+      const nextBal = Math.max(0, Number(targetInvoice.total) - nextPaid);
+      const nextStatus = nextBal <= 0 ? "Received" : nextPaid > 0 ? "Partial" : "Due";
+
+      // 1. Add Payment record
+      await addDoc(collection(db, "payments"), {
+        invoiceId: paySelectedInvId,
+        clientId: targetInvoice.clientId,
+        amount,
+        dateReceived: new Date().toISOString().split("T")[0],
+        method: payMethod,
+        notes: payNotes || "",
+      });
+
+      // 2. Update parent invoice totals
+      await updateDoc(doc(db, "invoices", paySelectedInvId), {
+        amountPaid: nextPaid,
+        balance: nextBal,
+        status: nextStatus,
+      });
+
+      // 3. Update client total paid
+      const clientRef = doc(db, "clients", targetInvoice.clientId);
+      const clientDoc = await getDoc(clientRef);
+      if (clientDoc.exists()) {
+        const clientData = clientDoc.data();
+        const prevPaid = Number(clientData.financials?.totalPaid) || 0;
+        await updateDoc(clientRef, {
+          "financials.totalPaid": prevPaid + amount,
+          "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
+        });
+      }
+
+      setPayProjOpen(false);
+      setPayProject(null);
+    } catch (err) {
+      alert("Error recording payment: " + err.message);
     }
   };
 
@@ -284,7 +601,7 @@ export default function ClientProfilePage() {
 
     try {
       const amount = Number(newInvAmount);
-      const taxRate = client.financials?.taxRate || 13;
+      const taxRate = newInvIncludeHST ? (client.financials?.taxRate || 13) : 0;
       const tax = Number(((amount * taxRate) / 100).toFixed(2));
       const total = amount + tax;
 
@@ -299,16 +616,35 @@ export default function ClientProfilePage() {
         total,
         amountPaid: 0,
         balance: total,
-        status: "Sent",
+        status: "Due",
         paymentMethod: client.financials?.paymentMethod || "Credit Card",
         receiptUrl: "",
         notes: "",
+        description: newInvDescription || "Software and App Development",
+        clientName: newInvClientName,
+        clientAttention: newInvClientAttention,
+        clientEmail: newInvClientEmail,
+        craNumber: newInvCraNumber || "",
+        hstNumber: newInvHstNumber || "",
+        fromCompanyName: newInvFromCompany || "14689941 Canada Inc.",
+        fromBrandName: newInvFromBrand || "Operating as Monk Media",
+        fromEmail: newInvFromEmail || "info@monkmedia.ca",
       };
 
       await addDoc(collection(db, "invoices"), payload);
       setNewInvNum("");
       setNewInvAmount("");
       setNewInvDue("");
+      setNewInvIncludeHST(false);
+      setNewInvDescription("Software and App Development");
+      setNewInvClientName(client.businessName || "");
+      setNewInvClientAttention(client.onboardingContactName || "Tejinder Singh");
+      setNewInvClientEmail(client.email || "");
+      setNewInvCraNumber("");
+      setNewInvHstNumber("");
+      setNewInvFromCompany("14689941 Canada Inc.");
+      setNewInvFromBrand("Operating as Monk Media");
+      setNewInvFromEmail("info@monkmedia.ca");
     } catch (err) {
       alert("Error adding invoice: " + err.message);
     }
@@ -473,59 +809,124 @@ export default function ClientProfilePage() {
                   <div className="flex items-center justify-between pb-2 border-b border-sky-50">
                     <h3 className="text-sm font-bold text-sky-600">Company Overview</h3>
                     <button
-                      onClick={() => setIsEditingClient(!isEditingClient)}
+                      onClick={() => {
+                        if (isEditingClient) {
+                          setIsEditingClient(false);
+                          setEditData(null);
+                        } else {
+                          handleStartEdit();
+                        }
+                      }}
                       className="px-3 py-1 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl text-xs font-bold transition-all"
                     >
                       {isEditingClient ? "Cancel" : "Edit Profile"}
                     </button>
                   </div>
 
-                  {isEditingClient ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-medium">
-                      <div>
-                        <label className="block text-sky-500 mb-1 font-bold uppercase">Legal Name</label>
-                        <input
-                          type="text"
-                          defaultValue={client.legalName}
-                          onChange={(e) => handleUpdateClient({ legalName: e.target.value })}
-                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
-                        />
+                  {isEditingClient && editData ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-medium">
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Business / Brand Name</label>
+                          <input
+                            type="text"
+                            value={editData.businessName}
+                            onChange={(e) => setEditData({ ...editData, businessName: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Legal Name</label>
+                          <input
+                            type="text"
+                            value={editData.legalName}
+                            onChange={(e) => setEditData({ ...editData, legalName: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Contact Person</label>
+                          <input
+                            type="text"
+                            value={editData.contactPerson}
+                            onChange={(e) => setEditData({ ...editData, contactPerson: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Email Address</label>
+                          <input
+                            type="email"
+                            value={editData.email}
+                            onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Phone Number</label>
+                          <input
+                            type="text"
+                            value={editData.phone}
+                            onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Industry</label>
+                          <input
+                            type="text"
+                            value={editData.industry}
+                            onChange={(e) => setEditData({ ...editData, industry: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Website</label>
+                          <input
+                            type="text"
+                            value={editData.website}
+                            onChange={(e) => setEditData({ ...editData, website: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Retainer Start Date</label>
+                          <input
+                            type="date"
+                            value={editData.contractStart}
+                            onChange={(e) => setEditData({ ...editData, contractStart: e.target.value })}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
+                        {(role === "admin" || role === "manager") && (
+                          <div>
+                            <label className="block text-sky-500 mb-1 font-bold uppercase">Monthly Retainer ($)</label>
+                            <input
+                              type="number"
+                              value={editData.monthlyRetainer}
+                              onChange={(e) => setEditData({ ...editData, monthlyRetainer: Number(e.target.value) || 0 })}
+                              className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                            />
+                          </div>
+                        )}
+                        <div className="sm:col-span-2">
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Client Strategy & Notes</label>
+                          <textarea
+                            rows={3}
+                            value={editData.notes}
+                            onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
+                            placeholder="Enter strategy guidelines, client notes..."
+                            className="w-full p-2.5 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sky-500 mb-1 font-bold uppercase">Contact Person</label>
-                        <input
-                          type="text"
-                          defaultValue={client.contactPerson}
-                          onChange={(e) => handleUpdateClient({ contactPerson: e.target.value })}
-                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sky-500 mb-1 font-bold uppercase">Email Address</label>
-                        <input
-                          type="email"
-                          defaultValue={client.email}
-                          onChange={(e) => handleUpdateClient({ email: e.target.value })}
-                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sky-500 mb-1 font-bold uppercase">Phone Number</label>
-                        <input
-                          type="text"
-                          defaultValue={client.phone}
-                          onChange={(e) => handleUpdateClient({ phone: e.target.value })}
-                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="block text-sky-500 mb-1 font-bold uppercase">Website</label>
-                        <input
-                          type="text"
-                          defaultValue={client.website}
-                          onChange={(e) => handleUpdateClient({ website: e.target.value })}
-                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
-                        />
+                      <div className="flex justify-end pt-2">
+                        <button
+                          onClick={handleSaveProfile}
+                          className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all"
+                        >
+                          Save Changes
+                        </button>
                       </div>
                     </div>
                   ) : (
@@ -540,12 +941,26 @@ export default function ClientProfilePage() {
                       </div>
                       <div>
                         <p className="text-sky-400 font-bold uppercase">Email Address</p>
-                        <p className="mt-0.5">{client.email}</p>
+                        <p className="mt-0.5">{client.email || "Not set"}</p>
                       </div>
                       <div>
                         <p className="text-sky-400 font-bold uppercase">Phone Line</p>
                         <p className="mt-0.5">{client.phone || "Not set"}</p>
                       </div>
+                      <div>
+                        <p className="text-sky-400 font-bold uppercase">Industry</p>
+                        <p className="mt-0.5 capitalize">{client.industry || "Not set"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sky-400 font-bold uppercase">Retainer Start Date</p>
+                        <p className="mt-0.5">{client.financials?.contractStart || "Not set"}</p>
+                      </div>
+                      {(role === "admin" || role === "manager") && (
+                        <div>
+                          <p className="text-sky-400 font-bold uppercase">Monthly Retainer</p>
+                          <p className="mt-0.5">${(client.financials?.monthlyRetainer || 0).toLocaleString()}</p>
+                        </div>
+                      )}
                       <div className="sm:col-span-2">
                         <p className="text-sky-400 font-bold uppercase">Website Domain</p>
                         <p className="mt-0.5 text-sky-500 underline">
@@ -580,6 +995,54 @@ export default function ClientProfilePage() {
                       Save Notes
                     </button>
                   </div>
+                </div>
+
+                {/* Client Projects Overview Card */}
+                <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-sky-50">
+                    <h3 className="text-sm font-bold text-sky-600">Client Projects ({projects.length})</h3>
+                    {(role === "admin" || role === "manager") && (
+                      <button
+                        onClick={() => {
+                          setActiveTab("projects");
+                        }}
+                        className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl text-xs font-bold transition-all"
+                      >
+                        + Launch Project
+                      </button>
+                    )}
+                  </div>
+
+                  {projects.length === 0 ? (
+                    <p className="text-xs text-sky-400 py-2">No active projects found under this client.</p>
+                  ) : (
+                    <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                      {projects.map((p) => (
+                        <div key={p.id} className="p-3 bg-sky-50/10 border border-sky-100/50 rounded-2xl flex items-center justify-between gap-4 text-xs font-semibold">
+                          <div>
+                            <p className="font-bold text-sky-600">{p.name}</p>
+                            <p className="text-[10px] text-sky-400 capitalize mt-0.5">{p.type} • {p.status}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <p className="text-sky-500 font-bold">${Number(p.value).toLocaleString()}</p>
+                              <div className="w-[60px] bg-sky-50 rounded-full h-1 mt-1">
+                                <div className="bg-sky-500 h-1 rounded-full" style={{ width: `${p.progressPercent || 0}%` }}></div>
+                              </div>
+                            </div>
+                            {(role === "admin" || role === "manager") && (
+                              <button
+                                onClick={() => handleStartEditProject(p)}
+                                className="px-2.5 py-1 bg-white hover:bg-sky-50 text-sky-500 rounded-lg border border-sky-100 text-[10px] font-bold"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -666,11 +1129,28 @@ export default function ClientProfilePage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sky-500 mb-1">Deadline Date</label>
+                      <label className="block text-sky-500 mb-1">Start Date</label>
                       <input
                         type="date"
-                        value={newProjDeadline}
-                        onChange={(e) => setNewProjDeadline(e.target.value)}
+                        value={newProjStartDate}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewProjStartDate(val);
+                          if (val) {
+                            const start = new Date(val + 'T00:00:00');
+                            start.setDate(start.getDate() + 30);
+                            setNewProjEndDate(start.toISOString().split("T")[0]);
+                          }
+                        }}
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">End Date</label>
+                      <input
+                        type="date"
+                        value={newProjEndDate}
+                        onChange={(e) => setNewProjEndDate(e.target.value)}
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
                     </div>
@@ -694,15 +1174,16 @@ export default function ClientProfilePage() {
                       <th className="p-4 px-6">Name</th>
                       <th className="p-4 px-6">Type</th>
                       <th className="p-4 px-6">Status</th>
-                      <th className="p-4 px-6">Deadline</th>
+                      <th className="p-4 px-6">Billing Period</th>
                       <th className="p-4 px-6">Progress</th>
                       <th className="p-4 px-6 text-right">Value</th>
+                      <th className="p-4 px-6 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
                     {projects.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-sky-400">
+                        <td colSpan={7} className="p-8 text-center text-sky-400">
                           No active projects found for this client.
                         </td>
                       </tr>
@@ -716,19 +1197,554 @@ export default function ClientProfilePage() {
                               {p.status}
                             </span>
                           </td>
-                          <td className="p-4 px-6">{p.deadline || "None"}</td>
+                          <td className="p-4 px-6">
+                            {p.startDate ? p.startDate + " to " + (p.endDate || p.deadline) : (p.deadline || "None")}
+                          </td>
                           <td className="p-4 px-6">
                             <div className="w-full bg-sky-50 rounded-full h-1.5 max-w-[80px]">
                               <div className="bg-sky-500 h-1.5 rounded-full" style={{ width: `${p.progressPercent || 0}%` }}></div>
                             </div>
                           </td>
                           <td className="p-4 px-6 text-right">${Number(p.value).toLocaleString()}</td>
+                          <td className="p-4 px-6 text-right">
+                            {(role === "admin" || role === "manager") && (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleStartBillProject(p)}
+                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-100 rounded-xl text-[10px] font-bold transition-all"
+                                  title="Bill Campaign"
+                                >
+                                  Bill
+                                </button>
+                                <button
+                                  onClick={() => handleStartProjectPayment(p)}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 rounded-xl text-[10px] font-bold transition-all"
+                                  title="Log Payment"
+                                >
+                                  Pay
+                                </button>
+                                <button
+                                  onClick={() => handleStartEditProject(p)}
+                                  className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 rounded-xl text-xs font-bold transition-all"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            )}
+                          </td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
               </div>
+
+              {/* Edit Project Drawer */}
+              {editProjOpen && (
+                <div className="fixed inset-0 z-50 overflow-hidden">
+                  <div className="absolute inset-0 bg-sky-950/20 backdrop-blur-sm" onClick={() => setEditProjOpen(false)} />
+                  <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+                    <div className="w-screen max-w-md bg-white shadow-2xl p-6 sm:p-8 flex flex-col h-full border-l border-sky-100">
+                      <div className="flex items-center justify-between pb-4 border-b border-sky-100">
+                        <div>
+                          <h2 className="text-xl font-bold text-sky-600">Edit Project</h2>
+                          <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Modify campaign parameters</p>
+                        </div>
+                        <button onClick={() => setEditProjOpen(false)} className="p-1 text-sky-400 hover:text-sky-500 rounded-lg border border-sky-100">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleUpdateProject} className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                            Project Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={editProjName}
+                            onChange={(e) => setEditProjName(e.target.value)}
+                            placeholder="e.g. Winter Social Launch"
+                            className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 placeholder-sky-300 outline-none transition-all duration-200"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                            Project Type
+                          </label>
+                          <select
+                            value={editProjType}
+                            onChange={(e) => setEditProjType(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none"
+                          >
+                            <option value="Social Media">Social Media</option>
+                            <option value="Video Shoot">Video Production</option>
+                            <option value="Web Development">Web Development</option>
+                            <option value="Ad Campaign">Ad Campaign</option>
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                              Campaign Value ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={editProjValue}
+                              onChange={(e) => setEditProjValue(e.target.value)}
+                              placeholder="e.g. 5000"
+                              className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none"
+                            />
+                          </div>
+                           <div>
+                             <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                               Start Date
+                             </label>
+                             <input
+                               type="date"
+                               value={editProjStartDate}
+                               onChange={(e) => {
+                                 const val = e.target.value;
+                                 setEditProjStartDate(val);
+                                 if (val) {
+                                   const start = new Date(val + 'T00:00:00');
+                                   start.setDate(start.getDate() + 30);
+                                   setEditProjEndDate(start.toISOString().split("T")[0]);
+                                 }
+                               }}
+                               className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none"
+                             />
+                           </div>
+                           <div>
+                             <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                               End Date
+                             </label>
+                             <input
+                               type="date"
+                               value={editProjEndDate}
+                               onChange={(e) => setEditProjEndDate(e.target.value)}
+                               className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none"
+                             />
+                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                              Status / Stage
+                            </label>
+                            <select
+                              value={editProjStatus}
+                              onChange={(e) => setEditProjStatus(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none text-sky-600"
+                            >
+                              {["Planned", "Awaiting Deposit", "In Progress", "Completed", "On Hold", "Cancelled"].map((stg) => (
+                                <option key={stg} value={stg}>
+                                  {stg}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                              Progress ({editProjProgress}%)
+                            </label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="5"
+                              value={editProjProgress}
+                              onChange={(e) => setEditProjProgress(Number(e.target.value))}
+                              className="w-full h-2 bg-sky-100 rounded-lg appearance-none cursor-pointer accent-sky-500 mt-3"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                            Drive Link / Folder URL
+                          </label>
+                          <input
+                            type="url"
+                            value={editProjDriveFolder}
+                            onChange={(e) => setEditProjDriveFolder(e.target.value)}
+                            placeholder="https://drive.google.com/..."
+                            className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                            Project Manager
+                          </label>
+                          <select
+                            value={editProjManager}
+                            onChange={(e) => setEditProjManager(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none"
+                          >
+                            <option value="">Assign to client manager</option>
+                            {teamMembers
+                              .filter((u) => u.role === "manager" || u.role === "admin")
+                              .map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                            Campaign Description
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editProjDescription}
+                            onChange={(e) => setEditProjDescription(e.target.value)}
+                            placeholder="Enter brief description, deliverables guidelines..."
+                            className="w-full p-3 border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                            Internal Notes
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editProjNotes}
+                            onChange={(e) => setEditProjNotes(e.target.value)}
+                            placeholder="Additional manager/team internal notes..."
+                            className="w-full p-3 border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none"
+                          />
+                        </div>
+
+                        <div className="pt-4 border-t border-sky-50 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditProjOpen(false)}
+                            className="px-4 py-2 border border-sky-100 text-sky-500 rounded-2xl text-xs font-bold hover:bg-sky-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-2xl text-xs font-bold shadow hover:shadow-lg"
+                          >
+                            Save Changes
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Bill Project Drawer */}
+              {billProjOpen && billProject && (
+                <div className="fixed inset-0 z-50 overflow-hidden">
+                  <div className="absolute inset-0 bg-sky-950/20 backdrop-blur-sm" onClick={() => { setBillProjOpen(false); setBillProject(null); }} />
+                  <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+                    <div className="w-screen max-w-md bg-white shadow-2xl p-6 sm:p-8 flex flex-col h-full border-l border-sky-100">
+                      <div className="flex items-center justify-between pb-4 border-b border-sky-100">
+                        <div>
+                          <h2 className="text-xl font-bold text-sky-600">Bill Project</h2>
+                          <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Issue Campaign Invoice</p>
+                        </div>
+                        <button onClick={() => { setBillProjOpen(false); setBillProject(null); }} className="p-1 text-sky-400 hover:text-sky-500 rounded-lg border border-sky-100">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleBillProject} className="flex-1 overflow-y-auto py-4 space-y-4 pr-1 text-xs font-semibold">
+                        <div>
+                          <label className="block text-sky-500 mb-1">Invoice Number</label>
+                          <input
+                            type="text"
+                            required
+                            value={billInvNum}
+                            onChange={(e) => setBillInvNum(e.target.value)}
+                            placeholder="e.g. MM-INV-1002"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Project Name</label>
+                          <input
+                            disabled
+                            value={billProject.name}
+                            className="w-full p-2 border border-sky-50 rounded-xl bg-sky-50/20 text-sky-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Billing Client Name (Logo & PDF Header)</label>
+                          <input
+                            type="text"
+                            required
+                            value={billClientName}
+                            onChange={(e) => setBillClientName(e.target.value)}
+                            placeholder="e.g. Metric Air Limited"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Billing Contact / Attention</label>
+                          <input
+                            type="text"
+                            required
+                            value={billClientAttention}
+                            onChange={(e) => setBillClientAttention(e.target.value)}
+                            placeholder="e.g. Tejinder Singh"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Billing Email Address</label>
+                          <input
+                            type="email"
+                            required
+                            value={billClientEmail}
+                            onChange={(e) => setBillClientEmail(e.target.value)}
+                            placeholder="e.g. billing@metricair.com"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">CRA Business Number</label>
+                          <input
+                            type="text"
+                            value={billCraNumber}
+                            onChange={(e) => setBillCraNumber(e.target.value)}
+                            placeholder="e.g. 777790411"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">HST Registration No.</label>
+                          <input
+                            type="text"
+                            value={billHstNumber}
+                            onChange={(e) => setBillHstNumber(e.target.value)}
+                            placeholder="e.g. 777790411 RT 0001"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div className="pt-2 border-t border-dashed border-sky-100 mt-2">
+                          <h4 className="text-[9px] font-black uppercase text-sky-400 tracking-wider mb-2">Sender (From) Customization</h4>
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Sender Company Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={billFromCompany}
+                            onChange={(e) => setBillFromCompany(e.target.value)}
+                            placeholder="e.g. 14689941 Canada Inc."
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Sender Brand/Operating Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={billFromBrand}
+                            onChange={(e) => setBillFromBrand(e.target.value)}
+                            placeholder="e.g. Operating as Monk Media"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Sender Email Address</label>
+                          <input
+                            type="email"
+                            required
+                            value={billFromEmail}
+                            onChange={(e) => setBillFromEmail(e.target.value)}
+                            placeholder="e.g. info@monkmedia.ca"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Invoice Item / Description</label>
+                          <input
+                            type="text"
+                            required
+                            value={billInvDescription}
+                            onChange={(e) => setBillInvDescription(e.target.value)}
+                            placeholder="e.g. Software and App Development"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Billing Amount ($)</label>
+                          <input
+                            type="number"
+                            required
+                            value={billInvAmount}
+                            onChange={(e) => setBillInvAmount(e.target.value)}
+                            placeholder="e.g. 2000"
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sky-500 mb-1">Due Date</label>
+                          <input
+                            type="date"
+                            required
+                            value={billInvDue}
+                            onChange={(e) => setBillInvDue(e.target.value)}
+                            className="w-full p-2 border border-sky-100 rounded-xl"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 py-1">
+                          <input
+                            type="checkbox"
+                            id="billIncludeHSTClient"
+                            checked={billIncludeHST}
+                            onChange={(e) => setBillIncludeHST(e.target.checked)}
+                            className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
+                          />
+                          <label htmlFor="billIncludeHSTClient" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
+                            Include HST / Tax (13%)
+                          </label>
+                        </div>
+                        <div className="pt-4 border-t border-sky-50 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setBillProjOpen(false); setBillProject(null); }}
+                            className="px-4 py-2 border border-sky-100 text-sky-500 rounded-xl"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-sky-500 text-white rounded-xl font-bold shadow hover:bg-sky-600 transition-all"
+                          >
+                            Issue Invoice
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Record Project Payment Drawer */}
+              {payProjOpen && payProject && (
+                <div className="fixed inset-0 z-50 overflow-hidden">
+                  <div className="absolute inset-0 bg-sky-950/20 backdrop-blur-sm" onClick={() => { setPayProjOpen(false); setPayProject(null); }} />
+                  <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+                    <div className="w-screen max-w-md bg-white shadow-2xl p-6 sm:p-8 flex flex-col h-full border-l border-sky-100">
+                      <div className="flex items-center justify-between pb-4 border-b border-sky-100">
+                        <div>
+                          <h2 className="text-xl font-bold text-sky-600">Record Payment</h2>
+                          <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Collect Project Revenue</p>
+                        </div>
+                        <button onClick={() => { setPayProjOpen(false); setPayProject(null); }} className="p-1 text-sky-400 hover:text-sky-500 rounded-lg border border-sky-100">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleRecordProjectPayment} className="flex-1 overflow-y-auto py-4 space-y-4 pr-1 text-xs font-semibold">
+                        <div>
+                          <label className="block text-sky-500 mb-1">Project Name</label>
+                          <input
+                            type="text"
+                            disabled
+                            value={payProject.name}
+                            className="w-full p-2 border border-sky-50 rounded-xl bg-sky-50/20 text-sky-400"
+                          />
+                        </div>
+
+                        {payProjInvoices.length === 0 ? (
+                          <div className="p-4 bg-sky-50/20 text-sky-500 text-center rounded-2xl border border-sky-100 font-bold">
+                            No unpaid invoices found for this project. Please click "Bill" first to issue an invoice.
+                          </div>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-sky-500 mb-1">Select Project Invoice</label>
+                              <select
+                                value={paySelectedInvId}
+                                required
+                                onChange={(e) => {
+                                  setPaySelectedInvId(e.target.value);
+                                  const target = payProjInvoices.find((i) => i.id === e.target.value);
+                                  if (target) setPayAmount(target.balance);
+                                }}
+                                className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                              >
+                                {payProjInvoices.map((inv) => (
+                                  <option key={inv.id} value={inv.id}>
+                                    {inv.invoiceNumber} (Oustanding: ${Number(inv.balance).toLocaleString()})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sky-500 mb-1">Payment Amount ($)</label>
+                              <input
+                                type="number"
+                                required
+                                value={payAmount}
+                                onChange={(e) => setPayAmount(e.target.value)}
+                                placeholder="e.g. 1500"
+                                className="w-full p-2 border border-sky-100 rounded-xl"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sky-500 mb-1">Payment Method</label>
+                              <select
+                                value={payMethod}
+                                onChange={(e) => setPayMethod(e.target.value)}
+                                className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                              >
+                                <option value="Bank Transfer">Bank Transfer</option>
+                                <option value="Credit Card">Credit Card</option>
+                                <option value="Cheque">Cheque</option>
+                                <option value="Cash">Cash</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sky-500 mb-1">Notes</label>
+                              <textarea
+                                value={payNotes}
+                                onChange={(e) => setPayNotes(e.target.value)}
+                                placeholder="Payment details, transaction ID, bank wire confirmation..."
+                                className="w-full p-2 border border-sky-100 rounded-xl"
+                                rows={3}
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        <div className="pt-4 border-t border-sky-50 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setPayProjOpen(false); setPayProject(null); }}
+                            className="px-4 py-2 border border-sky-100 text-sky-500 rounded-xl"
+                          >
+                            Cancel
+                          </button>
+                          {payProjInvoices.length > 0 && (
+                            <button
+                              type="submit"
+                              className="px-4 py-2 bg-sky-500 text-white rounded-xl font-bold shadow hover:bg-sky-600 transition-all"
+                            >
+                              Record Payment
+                            </button>
+                          )}
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )}
 
             </div>
           )}
@@ -803,6 +1819,106 @@ export default function ClientProfilePage() {
                       />
                     </div>
                     <div>
+                      <label className="block text-sky-500 mb-1">Billing Client Name (Logo & PDF Header)</label>
+                      <input
+                        type="text"
+                        required
+                        value={newInvClientName}
+                        onChange={(e) => setNewInvClientName(e.target.value)}
+                        placeholder="e.g. Metric Air Limited"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Billing Contact / Attention</label>
+                      <input
+                        type="text"
+                        required
+                        value={newInvClientAttention}
+                        onChange={(e) => setNewInvClientAttention(e.target.value)}
+                        placeholder="e.g. Tejinder Singh"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Billing Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={newInvClientEmail}
+                        onChange={(e) => setNewInvClientEmail(e.target.value)}
+                        placeholder="e.g. billing@metricair.com"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">CRA Business Number</label>
+                      <input
+                        type="text"
+                        value={newInvCraNumber}
+                        onChange={(e) => setNewInvCraNumber(e.target.value)}
+                        placeholder="e.g. 777790411"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">HST Registration No.</label>
+                      <input
+                        type="text"
+                        value={newInvHstNumber}
+                        onChange={(e) => setNewInvHstNumber(e.target.value)}
+                        placeholder="e.g. 777790411 RT 0001"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div className="pt-2 border-t border-dashed border-sky-100 mt-2">
+                      <h4 className="text-[9px] font-black uppercase text-sky-400 tracking-wider mb-2">Sender (From) Customization</h4>
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Sender Company Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={newInvFromCompany}
+                        onChange={(e) => setNewInvFromCompany(e.target.value)}
+                        placeholder="e.g. 14689941 Canada Inc."
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Sender Brand/Operating Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={newInvFromBrand}
+                        onChange={(e) => setNewInvFromBrand(e.target.value)}
+                        placeholder="e.g. Operating as Monk Media"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Sender Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={newInvFromEmail}
+                        onChange={(e) => setNewInvFromEmail(e.target.value)}
+                        placeholder="e.g. info@monkmedia.ca"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Invoice Item / Description</label>
+                      <input
+                        type="text"
+                        required
+                        value={newInvDescription}
+                        onChange={(e) => setNewInvDescription(e.target.value)}
+                        placeholder="e.g. Software and App Development"
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                    <div>
                       <label className="block text-sky-500 mb-1">Base Amount ($)</label>
                       <input
                         type="number"
@@ -822,6 +1938,18 @@ export default function ClientProfilePage() {
                         onChange={(e) => setNewInvDue(e.target.value)}
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
+                    </div>
+                    <div className="flex items-center gap-2 py-1">
+                      <input
+                        type="checkbox"
+                        id="newInvIncludeHST"
+                        checked={newInvIncludeHST}
+                        onChange={(e) => setNewInvIncludeHST(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
+                      />
+                      <label htmlFor="newInvIncludeHST" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
+                        Include HST / Tax (13%)
+                      </label>
                     </div>
                     <button
                       type="submit"
@@ -863,22 +1991,24 @@ export default function ClientProfilePage() {
                               <td className="p-3 px-4">{inv.invoiceDate}</td>
                               <td className="p-3 px-4">{inv.dueDate}</td>
                               <td className="p-3 px-4 text-center">
-                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
-                                  inv.status === "Paid"
+                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${
+                                  inv.status === "Received" || inv.status === "Paid"
+                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                                    : inv.status === "Partial"
                                     ? "bg-sky-50 text-sky-600 border border-sky-100"
-                                    : "bg-red-50 text-red-500 border border-red-100"
+                                    : "bg-amber-50 text-amber-600 border border-amber-100"
                                 }`}>
-                                  {inv.status}
+                                  {inv.status || "Due"}
                                 </span>
                               </td>
                               <td className="p-3 px-4 text-right font-bold">${Number(inv.total).toLocaleString()}</td>
                               <td className="p-3 px-4 text-right">
-                                {inv.status !== "Paid" && (
+                                {inv.status !== "Received" && inv.status !== "Paid" && (
                                   <button
                                     onClick={async () => {
                                       const invRef = doc(db, "invoices", inv.id);
                                       await updateDoc(invRef, {
-                                        status: "Paid",
+                                        status: "Received",
                                         amountPaid: inv.total,
                                         balance: 0
                                       });

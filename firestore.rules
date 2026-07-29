@@ -155,6 +155,14 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    match /passwordResetRequests/{requestId} {
+      allow create: if request.resource.data.email is string
+                    && request.resource.data.role in ['manager', 'team']
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.createdAt is string;
+      allow read, write: if isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

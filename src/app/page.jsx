@@ -50,23 +50,39 @@ export default function EntryPage() {
         </div>
 
         {/* Portal Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
-          {portals.map((portal) => (
-            <Link
-              key={portal.name}
-              href={portal.href}
-              className="p-6 bg-white border border-sky-100 hover:border-sky-300 rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col items-center text-center group"
-            >
-              <div className={`w-12 h-12 rounded-2xl ${portal.color} text-white flex items-center justify-center mb-4 shadow group-hover:scale-110 transition-all duration-300`}>
-                <portal.icon className="w-6 h-6" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-6">
+          {portals.map((portal) => {
+            let glowGradient = "from-sky-400/20 to-indigo-500/20 group-hover:from-sky-500/40 group-hover:to-indigo-600/40";
+            if (portal.name.includes("Administrator")) {
+              glowGradient = "from-blue-400/25 to-indigo-500/25 group-hover:from-blue-500/45 group-hover:to-indigo-600/45";
+            } else if (portal.name.includes("Account Manager")) {
+              glowGradient = "from-sky-400/25 to-cyan-400/25 group-hover:from-sky-500/45 group-hover:to-cyan-500/45";
+            } else if (portal.name.includes("Team Member")) {
+              glowGradient = "from-sky-300/25 to-emerald-400/25 group-hover:from-sky-400/45 group-hover:to-emerald-500/45";
+            }
+
+            return (
+              <div key={portal.name} className="relative group flex flex-col">
+                {/* Backside Glow Layer */}
+                <div className={`absolute -inset-0.5 bg-gradient-to-br ${glowGradient} rounded-[32px] blur-xl opacity-60 group-hover:opacity-100 transition-all duration-500 group-hover:duration-200`} />
+                
+                {/* Portal Link Card */}
+                <Link
+                  href={portal.href}
+                  className="relative p-6 bg-white border border-sky-100/80 hover:border-sky-300 rounded-[32px] shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col items-center text-center group flex-1"
+                >
+                  <div className={`w-12 h-12 rounded-2xl ${portal.color} text-white flex items-center justify-center mb-4 shadow-md group-hover:scale-110 transition-all duration-300`}>
+                    <portal.icon className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-sky-600 mb-2">{portal.name}</h3>
+                  <p className="text-xs text-sky-400 leading-relaxed flex-1">{portal.desc}</p>
+                  <span className="mt-4 text-xs font-semibold text-sky-500 group-hover:text-sky-600 underline underline-offset-4 decoration-sky-300">
+                    Enter Portal →
+                  </span>
+                </Link>
               </div>
-              <h3 className="text-base font-bold text-sky-600 mb-2">{portal.name}</h3>
-              <p className="text-xs text-sky-400 leading-relaxed flex-1">{portal.desc}</p>
-              <span className="mt-4 text-xs font-semibold text-sky-500 group-hover:text-sky-600 underline underline-offset-4 decoration-sky-300">
-                Enter Portal →
-              </span>
-            </Link>
-          ))}
+            );
+          })}
         </div>
 
         {/* Setup Link */}
