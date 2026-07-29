@@ -7,6 +7,12 @@ import { collection, getDocs } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { KeyRound, ShieldAlert, UserCheck, Plus, Check, Copy } from "lucide-react";
 
+const WhatsAppIcon = () => (
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.713-1.455L0 24zm6.59-11.236c-.144-.24-.016-.372.104-.492.112-.112.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.3-.74-1.78-.195-.47-.393-.407-.54-.415-.137-.007-.294-.008-.45-.008-.156 0-.41.058-.624.294-.216.236-.82.8-.82 1.95s.84 2.26.957 2.42c.117.16 1.65 2.518 3.99 3.53.557.24 1.002.38 1.344.49.56.18 1.07.15 1.47.09.447-.067 1.38-.564 1.575-1.11.195-.546.195-1.01.137-1.11-.058-.09-.215-.14-.45-.257-.235-.117-1.38-.68-1.595-.76-.215-.08-.37-.12-.527.12-.157.24-.61.76-.748.92-.137.16-.274.18-.51.06-.235-.117-.994-.365-1.894-1.17-.7-.624-1.173-1.396-1.31-1.63z"/>
+  </svg>
+);
+
 export default function CreateTeamPage() {
   const { currentUser, role, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -28,6 +34,23 @@ export default function CreateTeamPage() {
   const [error, setError] = useState("");
   const [successData, setSuccessData] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [sharePhone, setSharePhone] = useState("");
+
+  const handleWhatsAppShare = (email, password, roleVal, customPhoneNum) => {
+    const cleanPhone = customPhoneNum ? customPhoneNum.replace(/[^0-9]/g, "") : "";
+    const portalPath = roleVal === "manager" ? "manager" : "team";
+    const text = `Hi! Here are your login credentials for the Monk Media Portal:
+
+Email: ${email}
+Password: ${password}
+Portal Link: ${window.location.origin}/login/${portalPath}
+
+Please keep these credentials secure.`;
+
+    const encodedText = encodeURIComponent(text);
+    const url = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+    window.open(url, "_blank");
+  };
 
   // Load clients list for assignment
   useEffect(() => {
@@ -105,6 +128,7 @@ export default function CreateTeamPage() {
       }
 
       setSuccessData(data);
+      setSharePhone(phone || "");
       // Reset form
       setName("");
       setEmail("");
@@ -166,31 +190,59 @@ export default function CreateTeamPage() {
 
         {/* Success Card */}
         {successData && (
-          <div className="p-6 bg-sky-50/50 border border-sky-100 rounded-3xl shadow-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <UserCheck className="w-6 h-6 text-sky-500 flex-shrink-0 mt-1" />
-              <div>
-                <h3 className="text-sm font-bold text-sky-600">Account Created Successfully!</h3>
-                <p className="text-xs text-sky-400 mt-1">
-                  Share these login credentials with the user. They will only be displayed once.
-                </p>
-                <div className="mt-3 bg-white p-3 rounded-2xl border border-sky-100 text-xs font-mono text-sky-600 space-y-1.5 max-w-sm">
-                  <div><span className="font-bold">Email:</span> {successData.email}</div>
-                  <div><span className="font-bold">Password:</span> {successData.password}</div>
-                  <div>
-                    <span className="font-bold">Portal:</span>{" "}
-                    {successData.role === "manager" ? "/login/manager" : "/login/team"}
+          <div className="p-6 bg-sky-50/50 border border-sky-100 rounded-3xl shadow-lg space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <UserCheck className="w-6 h-6 text-sky-500 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="text-sm font-bold text-sky-600">Account Created Successfully!</h3>
+                  <p className="text-xs text-sky-400 mt-1">
+                    Share these login credentials with the user. They will only be displayed once.
+                  </p>
+                  <div className="mt-3 bg-white p-3 rounded-2xl border border-sky-100 text-xs font-mono text-sky-600 space-y-1.5 max-w-sm">
+                    <div><span className="font-bold">Email:</span> {successData.email}</div>
+                    <div><span className="font-bold">Password:</span> {successData.password}</div>
+                    <div>
+                      <span className="font-bold">Portal:</span>{" "}
+                      {successData.role === "manager" ? "/login/manager" : "/login/team"}
+                    </div>
                   </div>
                 </div>
               </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleCopy}
+                  className="px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition-all duration-200 shadow flex items-center justify-center gap-1.5"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? "Copied!" : "Copy Credentials"}
+                </button>
+              </div>
             </div>
-            <button
-              onClick={handleCopy}
-              className="px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition-all duration-200 shadow flex items-center justify-center gap-1.5"
-            >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? "Copied!" : "Copy Credentials"}
-            </button>
+            
+            {/* WhatsApp Integration Panel */}
+            <div className="pt-4 border-t border-sky-100 flex flex-col sm:flex-row items-end gap-3 max-w-md">
+              <div className="w-full">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-sky-500 mb-1">
+                  Share via WhatsApp Number
+                </label>
+                <input
+                  type="text"
+                  value={sharePhone}
+                  onChange={(e) => setSharePhone(e.target.value)}
+                  placeholder="e.g. +1234567890"
+                  className="w-full px-3 py-2 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-xl text-xs text-sky-600 outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleWhatsAppShare(successData.email, successData.password, successData.role, sharePhone)}
+                className="px-4 py-2 bg-[#25D366] hover:bg-[#20ba56] text-white rounded-xl text-xs font-bold transition-all shadow flex items-center justify-center gap-2 flex-shrink-0"
+              >
+                <WhatsAppIcon />
+                Share on WhatsApp
+              </button>
+            </div>
           </div>
         )}
 

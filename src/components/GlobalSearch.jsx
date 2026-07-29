@@ -23,7 +23,7 @@ export default function GlobalSearch() {
   const { role } = useAuth();
   const inputRef = useRef(null);
 
-  // Toggle modal on cmd+k / ctrl+k
+  // Toggle modal on cmd+k / ctrl+k or custom trigger
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -31,8 +31,15 @@ export default function GlobalSearch() {
         setIsOpen((prev) => !prev);
       }
     };
+    const handleOpenSearch = () => {
+      setIsOpen(true);
+    };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("open-global-search", handleOpenSearch);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("open-global-search", handleOpenSearch);
+    };
   }, []);
 
   const fetchAllData = useCallback(async () => {
@@ -160,19 +167,7 @@ export default function GlobalSearch() {
   const hasResults = Object.values(results).some((arr) => arr.length > 0);
 
   if (!isOpen) {
-    // Return a floating search trigger button in bottom right corner or simple helper
-    return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 p-3 rounded-full bg-white hover:bg-sky-50 text-sky-500 hover:text-sky-600 border border-sky-200 shadow-xl transition-all duration-200 z-30 flex items-center justify-center gap-1.5 text-xs font-semibold"
-      >
-        <Search className="w-4 h-4" />
-        <span>Search</span>
-        <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] text-sky-400 bg-sky-50 border border-sky-100 rounded-md">
-          Ctrl K
-        </kbd>
-      </button>
-    );
+    return null;
   }
 
   return (

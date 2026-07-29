@@ -82,7 +82,7 @@ export default function Dashboard() {
 
   // Firestore real-time observers
   useEffect(() => {
-    if (!currentUser || authLoading) return;
+    if (!currentUser || authLoading || !role) return;
 
     setLoading(true);
 
@@ -240,7 +240,7 @@ export default function Dashboard() {
     return joined.getMonth() === now.getMonth() && joined.getFullYear() === now.getFullYear();
   }).length;
 
-  const activeProjectsCount = scopedProjects.filter((p) => p.status === "In Progress").length;
+  const activeProjectsCount = scopedProjects.filter((p) => p.status !== "Cancelled").length;
 
   const tasksDueToday = scopedTasks.filter((t) => t.dueDate === todayStr && t.status !== "Completed").length;
   
@@ -259,7 +259,7 @@ export default function Dashboard() {
   }).length;
 
   const activeAdCampaigns = scopedProjects.filter((p) => {
-    return p.type?.toLowerCase().includes("ad") && p.status === "In Progress";
+    return p.type?.toLowerCase().includes("ad") && p.status !== "Cancelled";
   }).length;
 
   // Leads
@@ -356,7 +356,21 @@ export default function Dashboard() {
         }, 0);
       }
 
-      result.push({ name: label, Revenue: rev });
+      // Calculate task completions for team members
+      let activity = 0;
+      if (role === "team") {
+        activity = scopedTasks.reduce((acc, t) => {
+          if (t.status === "Completed" && t.dueDate) {
+            const taskDate = new Date(t.dueDate);
+            if (taskDate.getMonth() === d.getMonth() && taskDate.getFullYear() === d.getFullYear()) {
+              return acc + 1;
+            }
+          }
+          return acc;
+        }, 0);
+      }
+
+      result.push({ name: label, Revenue: rev, Activity: activity });
     }
     return result;
   };

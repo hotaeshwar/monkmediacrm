@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import {
   doc,
   getDoc,
@@ -12,9 +12,9 @@ import {
   where,
   getDocs,
   addDoc,
-  onSnapshot
+  onSnapshot,
+  deleteDoc
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useRouter, useParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -34,7 +34,9 @@ import {
   Share2,
   FileDown,
   ShieldAlert,
-  X
+  X,
+  Save,
+  Edit
 } from "lucide-react";
 
 export default function ClientProfilePage() {
@@ -46,6 +48,11 @@ export default function ClientProfilePage() {
   const [client, setClient] = useState(null);
   const [checklist, setChecklist] = useState(null);
   const [projects, setProjects] = useState([]);
+
+  // Checklist CRUD States
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [editRowData, setEditRowData] = useState(null);
+  const [selectedKeys, setSelectedKeys] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [contentList, setContentList] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -150,6 +157,12 @@ export default function ClientProfilePage() {
   }, [client]);
 
   useEffect(() => {
+    if (checklist && checklist.items) {
+      setSelectedKeys(checklist.items.filter(item => item.tracked !== false).map(item => item.id));
+    }
+  }, [checklist]);
+
+  useEffect(() => {
     if (!currentUser || authLoading) return;
 
     const fetchClientData = async () => {
@@ -194,9 +207,49 @@ export default function ClientProfilePage() {
         // 3. Real-time subqueries
         const unsubChecklist = onSnapshot(
           query(collection(db, "onboardingChecklists"), where("clientId", "==", id)),
-          (snap) => {
+          async (snap) => {
             if (!snap.empty) {
-              setChecklist({ id: snap.docs[0].id, ...snap.docs[0].data() });
+              const docSnap = snap.docs[0];
+              const data = docSnap.data();
+              if (!data.items) {
+                // Auto-migrate checklist to have items array
+                const defaultKeys = [
+                  { key: "clientInfoCollected", label: "Client Info Collected" },
+                  { key: "contractSigned", label: "Contract Signed" },
+                  { key: "depositReceived", label: "Deposit Received" },
+                  { key: "invoiceCreated", label: "Invoice Created" },
+                  { key: "driveFolderCreated", label: "Drive Folder Created" },
+                  { key: "logoUploaded", label: "Logo Assets Uploaded" },
+                  { key: "brandAssetsUploaded", label: "Brand Collaterals Uploaded" },
+                  { key: "socialMediaAccess", label: "Social Media Credentials Logged" },
+                  { key: "metaBusinessAccess", label: "Meta Business Manager Access" },
+                  { key: "adAccountAccess", label: "Meta Ad Account Access Shared" },
+                  { key: "websiteAccess", label: "Website CMS/Hosting access shared" },
+                  { key: "servicesConfirmed", label: "Services Structure Finalized" },
+                  { key: "deliverablesConfirmed", label: "Deliverables Pipeline Confirmed" },
+                  { key: "firstShootScheduled", label: "First Content Shoot Scheduled" },
+                  { key: "teamAssigned", label: "Team Members Assigned" },
+                  { key: "addedToCalendar", label: "Google Calendar Sync complete" },
+                  { key: "reportingTemplateCreated", label: "Monthly Report Dashboard Setup" },
+                ];
+                const items = defaultKeys.map(item => ({
+                  id: item.key,
+                  label: item.label,
+                  checked: data[item.key] === true,
+                  projectId: data[item.key + "_projectId"] || "",
+                  notes: data[item.key + "_notes"] || "",
+                  tracked: true
+                }));
+                try {
+                  await updateDoc(doc(db, "onboardingChecklists", docSnap.id), { items });
+                } catch (err) {
+                  console.error("Migration failed:", err);
+                }
+              } else {
+                setChecklist({ id: docSnap.id, ...data });
+              }
+            } else {
+              setChecklist(null);
             }
           }
         );
@@ -343,14 +396,116 @@ export default function ClientProfilePage() {
     }
   };
 
-  // Onboarding Toggle
-  const handleToggleChecklist = async (key, val) => {
+  // Initialize checklist for client
+  const handleInitializeChecklist = async () => {
+    try {
+      const defaultKeys = [
+        { key: "clientInfoCollected", label: "Client Info Collected" },
+        { key: "contractSigned", label: "Contract Signed" },
+        { key: "depositReceived", label: "Deposit Received" },
+        { key: "invoiceCreated", label: "Invoice Created" },
+        { key: "driveFolderCreated", label: "Drive Folder Created" },
+        { key: "logoUploaded", label: "Logo Assets Uploaded" },
+        { key: "brandAssetsUploaded", label: "Brand Collaterals Uploaded" },
+        { key: "socialMediaAccess", label: "Social Media Credentials Logged" },
+        { key: "metaBusinessAccess", label: "Meta Business Manager Access" },
+        { key: "adAccountAccess", label: "Meta Ad Account Access Shared" },
+        { key: "websiteAccess", label: "Website CMS/Hosting access shared" },
+        { key: "servicesConfirmed", label: "Services Structure Finalized" },
+        { key: "deliverablesConfirmed", label: "Deliverables Pipeline Confirmed" },
+        { key: "firstShootScheduled", label: "First Content Shoot Scheduled" },
+        { key: "teamAssigned", label: "Team Members Assigned" },
+        { key: "addedToCalendar", label: "Google Calendar Sync complete" },
+        { key: "reportingTemplateCreated", label: "Monthly Report Dashboard Setup" },
+      ];
+      const items = defaultKeys.map(item => ({
+        id: item.key,
+        label: item.label,
+        checked: false,
+        projectId: "",
+        notes: "",
+        tracked: true
+      }));
+      await addDoc(collection(db, "onboardingChecklists"), {
+        clientId: id,
+        items
+      });
+    } catch (err) {
+      alert("Failed to initialize checklist: " + err.message);
+    }
+  };
+
+  // Toggle checklist checkbox
+  const handleToggleItem = async (itemId, isChecked) => {
     if (!checklist) return;
     try {
+      const updatedItems = checklist.items.map(item =>
+        item.id === itemId ? { ...item, checked: isChecked } : item
+      );
       const checkRef = doc(db, "onboardingChecklists", checklist.id);
-      await updateDoc(checkRef, { [key]: val });
+      await updateDoc(checkRef, { items: updatedItems });
     } catch (err) {
       console.error("Checklist toggle failure:", err);
+    }
+  };
+
+  // Start editing a row
+  const handleStartEditRow = (item) => {
+    setEditingRowId(item.id);
+    setEditRowData({ ...item });
+  };
+
+  // Save changes to edited row
+  const handleSaveRow = async () => {
+    if (!checklist || !editRowData) return;
+    try {
+      const updatedItems = checklist.items.map(item =>
+        item.id === editRowData.id ? { ...editRowData } : item
+      );
+      const checkRef = doc(db, "onboardingChecklists", checklist.id);
+      await updateDoc(checkRef, { items: updatedItems });
+      setEditingRowId(null);
+      setEditRowData(null);
+    } catch (err) {
+      alert("Failed to save row: " + err.message);
+    }
+  };
+
+  // Toggle select state locally for checklist items in the checklist selector grid
+  const handleToggleSelectKey = (key) => {
+    setSelectedKeys(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  // Save the selection of checklist milestones to track in the table
+  const handleSaveSelection = async () => {
+    if (!checklist) return;
+    try {
+      const updatedItems = checklist.items.map(item => ({
+        ...item,
+        tracked: selectedKeys.includes(item.id)
+      }));
+      const checkRef = doc(db, "onboardingChecklists", checklist.id);
+      await updateDoc(checkRef, { items: updatedItems });
+      alert("Tracked milestones updated successfully.");
+    } catch (err) {
+      alert("Failed to save selection: " + err.message);
+    }
+  };
+
+  // Remove/Delete a milestone from tracking
+  const handleRemoveTrackedItem = async (itemId) => {
+    if (!checklist) return;
+    if (!confirm("Are you sure you want to remove this milestone from the tracking table?")) return;
+    try {
+      const updatedItems = checklist.items.map(item =>
+        item.id === itemId ? { ...item, tracked: false } : item
+      );
+      const checkRef = doc(db, "onboardingChecklists", checklist.id);
+      await updateDoc(checkRef, { items: updatedItems });
+    } catch (err) {
+      console.error("Remove tracked milestone failure:", err);
     }
   };
 
@@ -676,6 +831,16 @@ export default function ClientProfilePage() {
     }
   };
 
+  // Helper to convert file to base64
+  const getBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   // Document File Upload
   const handleFileUpload = async (e) => {
     e.preventDefault();
@@ -683,11 +848,8 @@ export default function ClientProfilePage() {
 
     setUploadLoading(true);
     try {
-      const filePath = `/clients/${id}/documents/${docCategory}/${Date.now()}_${uploadFile.name}`;
-      const storageRef = ref(storage, filePath);
-      
-      const snapshot = await uploadBytes(storageRef, uploadFile);
-      const downloadUrl = await getDownloadURL(snapshot.ref);
+      // Convert file to base64 string
+      const fileDataUrl = await getBase64(uploadFile);
 
       // Write doc to Firestore
       const docPayload = {
@@ -700,17 +862,29 @@ export default function ClientProfilePage() {
         uploadedBy: currentUser?.email || "unknown",
         version: "1.0",
         approvalStatus: "Approved",
-        storageUrl: downloadUrl,
+        storageUrl: fileDataUrl, // Direct base64 string
         notes: "",
       };
 
       await addDoc(collection(db, "documents"), docPayload);
       setUploadFile(null);
+      if (e.target) e.target.reset(); // clear the file input
       alert("Document uploaded successfully.");
     } catch (err) {
       alert("Upload failed: " + err.message);
     } finally {
       setUploadLoading(false);
+    }
+  };
+
+  // Delete Document
+  const handleDeleteDocument = async (docId) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+    try {
+      await deleteDoc(doc(db, "documents", docId));
+      alert("Document deleted successfully.");
+    } catch (err) {
+      alert("Failed to delete document: " + err.message);
     }
   };
 
@@ -775,21 +949,21 @@ export default function ClientProfilePage() {
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="border-b border-sky-100 overflow-x-auto flex gap-2">
+        {/* Tab Selection (Glassmorphic Styling) */}
+        <div className="bg-sky-50/20 backdrop-blur-md border border-sky-100/40 p-2 rounded-[28px] overflow-x-auto flex gap-2 scrollbar-none">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-3 px-4 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-all ${
+                className={`py-2.5 px-5 font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap transition-all duration-300 ${
                   isActive
-                    ? "border-sky-500 text-sky-600"
-                    : "border-transparent text-sky-400 hover:text-sky-500"
+                    ? "bg-white border border-sky-100/50 shadow-[0_4px_12px_rgba(14,165,233,0.06)] text-sky-600 rounded-[20px]"
+                    : "text-sky-400 hover:text-sky-500 hover:bg-white/40 rounded-[20px]"
                 }`}
               >
-                <tab.icon className="w-4 h-4" />
+                <tab.icon className="w-3.5 h-3.5" />
                 {tab.label}
               </button>
             );
@@ -2186,44 +2360,112 @@ export default function ClientProfilePage() {
                       className="w-full py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-bold flex items-center justify-center gap-1 shadow disabled:opacity-50"
                     >
                       <Upload className="w-3.5 h-3.5" />
-                      {uploadLoading ? "Uploading..." : "Upload to Storage"}
+                      {uploadLoading ? "Uploading..." : "Upload Document"}
                     </button>
                   </div>
                 </div>
               </form>
 
-              {/* Document Registry cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {documents.length === 0 ? (
-                  <div className="col-span-full text-center py-12 text-sky-400 text-xs font-semibold">
-                    No documents uploaded.
-                  </div>
-                ) : (
-                  documents.map((doc) => (
-                    <div key={doc.id} className="p-4 border border-sky-100 rounded-3xl shadow-md bg-white space-y-2 flex flex-col justify-between">
-                      <div>
-                        <span className="px-2 py-0.5 text-[8px] uppercase tracking-widest font-bold bg-sky-50 border border-sky-200 text-sky-600 rounded-md">
-                          {doc.category}
-                        </span>
-                        <h4 className="text-xs font-bold text-sky-600 truncate mt-1.5" title={doc.fileName}>
-                          {doc.fileName}
-                        </h4>
-                        <p className="text-[10px] text-sky-400 mt-0.5">Uploaded on {doc.uploadDate}</p>
-                      </div>
-                      <div className="pt-3 border-t border-sky-50 flex justify-end">
-                        <a
-                          href={doc.storageUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 border border-sky-100 text-sky-600 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-all"
-                        >
-                          <FileDown className="w-3 h-3" />
-                          Download
-                        </a>
-                      </div>
-                    </div>
-                  ))
-                )}
+              {/* Document Registry Table */}
+              <div className="p-6 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
+                <div className="pb-2 border-b border-sky-50">
+                  <h3 className="text-sm font-bold text-sky-600">Document Registry</h3>
+                  <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Stored database files and assets</p>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                        <th className="p-4 px-6 w-20">Preview</th>
+                        <th className="p-4 px-6 min-w-[200px]">File Name</th>
+                        <th className="p-4 px-6 min-w-[120px]">Category</th>
+                        <th className="p-4 px-6 min-w-[120px]">Uploaded On</th>
+                        <th className="p-4 px-6 min-w-[150px]">Uploaded By</th>
+                        <th className="p-4 px-6 text-right w-36">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                      {documents.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-sky-400">
+                            No documents uploaded.
+                          </td>
+                        </tr>
+                      ) : (
+                        documents.map((doc) => {
+                          const isImage = doc.type?.startsWith("image/") || doc.storageUrl?.startsWith("data:image/");
+                          return (
+                            <tr key={doc.id} className="hover:bg-sky-50/10">
+                              {/* Preview */}
+                              <td className="p-4 px-6">
+                                {isImage ? (
+                                  <a href={doc.storageUrl} target="_blank" rel="noopener noreferrer">
+                                    <img
+                                      src={doc.storageUrl}
+                                      className="w-10 h-10 object-cover rounded-lg border border-sky-100 shadow-sm hover:scale-105 transition-transform"
+                                      alt={doc.fileName}
+                                    />
+                                  </a>
+                                ) : (
+                                  <div className="w-10 h-10 bg-sky-50 rounded-lg flex items-center justify-center border border-sky-100 text-sky-500">
+                                    <FileText className="w-5 h-5" />
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* File Name */}
+                              <td className="p-4 px-6 font-bold truncate max-w-[250px]" title={doc.fileName}>
+                                {doc.fileName}
+                              </td>
+
+                              {/* Category */}
+                              <td className="p-4 px-6">
+                                <span className="px-2 py-0.5 text-[8px] uppercase tracking-widest font-bold bg-sky-50 border border-sky-200 text-sky-600 rounded-md">
+                                  {doc.category}
+                                </span>
+                              </td>
+
+                              {/* Uploaded On */}
+                              <td className="p-4 px-6 text-sky-400">
+                                {doc.uploadDate}
+                              </td>
+
+                              {/* Uploaded By */}
+                              <td className="p-4 px-6 text-sky-400">
+                                {doc.uploadedBy}
+                              </td>
+
+                              {/* Actions */}
+                              <td className="p-4 px-6 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <a
+                                    href={doc.storageUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    download={doc.fileName}
+                                    className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-100 text-sky-600 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-all"
+                                  >
+                                    <FileDown className="w-3.5 h-3.5" />
+                                    Download
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDocument(doc.id)}
+                                    className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                    title="Delete Document"
+                                  >
+                                    <Trash className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
             </div>
@@ -2321,60 +2563,254 @@ export default function ClientProfilePage() {
 
           {/* TAB 7: ONBOARDING CHECKLIST */}
           {activeTab === "checklist" && (
-            <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
-              <div className="pb-2 border-b border-sky-50">
-                <h3 className="text-sm font-bold text-sky-600">Client Onboarding Milestones</h3>
-                <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">17 Core Agency Tasks Checklist</p>
-              </div>
-
+            <div className="space-y-6">
               {!checklist ? (
-                <div className="text-center py-12 text-sky-400 text-xs font-semibold">
-                  No checklist registered for this client.
+                <div className="text-center py-12 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
+                  <div className="text-sky-400 text-xs font-semibold">
+                    No onboarding checklist registered for this client.
+                  </div>
+                  <button
+                    onClick={handleInitializeChecklist}
+                    className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl transition-all shadow"
+                  >
+                    Initialize Onboarding Checklist
+                  </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {[
-                    { key: "clientInfoCollected", label: "Client Info Collected" },
-                    { key: "contractSigned", label: "Contract Signed" },
-                    { key: "depositReceived", label: "Deposit Received" },
-                    { key: "invoiceCreated", label: "Invoice Created" },
-                    { key: "driveFolderCreated", label: "Drive Folder Created" },
-                    { key: "logoUploaded", label: "Logo Assets Uploaded" },
-                    { key: "brandAssetsUploaded", label: "Brand Collaterals Uploaded" },
-                    { key: "socialMediaAccess", label: "Social Media Credentials Logged" },
-                    { key: "metaBusinessAccess", label: "Meta Business Manager Access" },
-                    { key: "adAccountAccess", label: "Meta Ad Account Access Shared" },
-                    { key: "websiteAccess", label: "Website CMS/Hosting access shared" },
-                    { key: "servicesConfirmed", label: "Services Structure Finalized" },
-                    { key: "deliverablesConfirmed", label: "Deliverables Pipeline Confirmed" },
-                    { key: "firstShootScheduled", label: "First Content Shoot Scheduled" },
-                    { key: "teamAssigned", label: "Team Members Assigned" },
-                    { key: "addedToCalendar", label: "Google Calendar Sync complete" },
-                    { key: "reportingTemplateCreated", label: "Monthly Report Dashboard Setup" },
-                  ].map((item) => {
-                    const isChecked = checklist[item.key] === true;
-                    return (
+                <div className="space-y-6">
+                  
+                  {/* Step 1: Checklist Selector Grid */}
+                  <div className="p-6 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
+                    <div className="pb-2 border-b border-sky-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-sky-600">1. Select Milestones to Track</h3>
+                        <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Toggle tasks from the 17 core agency steps</p>
+                      </div>
                       <button
                         type="button"
-                        key={item.key}
-                        onClick={() => handleToggleChecklist(item.key, !isChecked)}
-                        className={`p-3.5 rounded-2xl border text-xs text-left flex items-center justify-between font-semibold transition-all ${
-                          isChecked
-                            ? "bg-sky-50 border-sky-200 text-sky-600"
-                            : "bg-white border-sky-100 text-sky-400 hover:bg-sky-50/10"
-                        }`}
+                        onClick={handleSaveSelection}
+                        className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl transition-all shadow self-end sm:self-auto"
                       >
-                        <span>{item.label}</span>
-                        <div className={`w-5 h-5 rounded-lg border flex items-center justify-center flex-shrink-0 transition-colors ${
-                          isChecked
-                            ? "bg-sky-500 border-sky-500 text-white"
-                            : "border-sky-200 bg-white"
-                        }`}>
-                          {isChecked && <Check className="w-3.5 h-3.5" />}
-                        </div>
+                        Save Selection to Table
                       </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {checklist.items && checklist.items.map((item) => {
+                        const isSelected = selectedKeys.includes(item.id);
+                        return (
+                          <button
+                            type="button"
+                            key={item.id}
+                            onClick={() => handleToggleSelectKey(item.id)}
+                            className={`p-3 rounded-2xl border text-xs text-left flex items-center justify-between font-semibold transition-all ${
+                              isSelected
+                                ? "bg-sky-50 border-sky-200 text-sky-600"
+                                : "bg-white border-sky-100 text-sky-400 hover:bg-sky-50/10"
+                            }`}
+                          >
+                            <span>{item.label}</span>
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                              isSelected
+                                ? "bg-sky-500 border-sky-500 text-white"
+                                : "border-sky-200 bg-white"
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Step 2: Tracked Milestones CRUD Table */}
+                  {(() => {
+                    const trackedItems = checklist.items ? checklist.items.filter(item => item.tracked !== false) : [];
+                    const completedCount = trackedItems.filter(i => i.checked).length;
+                    const totalCount = trackedItems.length;
+                    const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+                    
+                    return (
+                      <div className="space-y-6">
+                        {/* Progress Bar */}
+                        {totalCount > 0 && (
+                          <div className="p-6 border border-sky-100 rounded-3xl shadow-md bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <h4 className="text-sm font-bold text-sky-600">Onboarding Completion Status</h4>
+                              <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">{completedCount} of {totalCount} tracked tasks completed</p>
+                            </div>
+                            <div className="flex items-center gap-3 w-full sm:max-w-xs">
+                              <div className="w-full bg-sky-50 rounded-full h-2 border border-sky-100">
+                                <div className="bg-sky-500 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }}></div>
+                              </div>
+                              <span className="text-xs font-bold text-sky-600 w-10 text-right">{percent}%</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="p-6 border border-sky-100 rounded-3xl shadow-xl bg-white space-y-4">
+                          <div className="pb-2 border-b border-sky-50">
+                            <h3 className="text-sm font-bold text-sky-600">2. Onboarding Milestones Table</h3>
+                            <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">CRUD application linking tasks and project details</p>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                              <thead>
+                                <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                                  <th className="p-4 px-6 w-16">Status</th>
+                                  <th className="p-4 px-6 min-w-[180px]">Milestone / Task</th>
+                                  <th className="p-4 px-6 min-w-[150px]">Project</th>
+                                  <th className="p-4 px-6 min-w-[220px]">Project Details</th>
+                                  <th className="p-4 px-6 min-w-[180px]">Notes</th>
+                                  <th className="p-4 px-6 text-right w-24">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                                {trackedItems.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="p-8 text-center text-sky-400">
+                                      No milestones selected. Choose steps to track in Step 1.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  trackedItems.map((item) => {
+                                    const isEditing = editingRowId === item.id;
+                                    const rowData = isEditing ? editRowData : item;
+                                    const isChecked = item.checked === true;
+                                    const linkedProject = projects.find(p => p.id === item.projectId);
+
+                                    return (
+                                      <tr key={item.id} className={`hover:bg-sky-50/5 ${isChecked ? "bg-sky-50/10" : ""}`}>
+                                        {/* Status */}
+                                        <td className="p-4 px-6">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleItem(item.id, !isChecked)}
+                                            className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
+                                              isChecked ? "bg-sky-500 border-sky-500 text-white" : "border-sky-200 bg-white hover:border-sky-300"
+                                            }`}
+                                          >
+                                            {isChecked && <Check className="w-3.5 h-3.5" />}
+                                          </button>
+                                        </td>
+
+                                        {/* Milestone Name */}
+                                        <td className="p-4 px-6 font-bold text-sky-700">
+                                          {item.label}
+                                        </td>
+
+                                        {/* Project Association */}
+                                        <td className="p-4 px-6">
+                                          {isEditing ? (
+                                            <select
+                                              value={rowData.projectId || ""}
+                                              onChange={(e) => setEditRowData({ ...rowData, projectId: e.target.value })}
+                                              className="w-full p-1.5 border border-sky-100 rounded-lg text-xs bg-white text-sky-600 focus:outline-none focus:border-sky-300"
+                                            >
+                                              <option value="">General Onboarding</option>
+                                              {projects.map((p) => (
+                                                <option key={p.id} value={p.id}>
+                                                  {p.name}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          ) : (
+                                            <span className="text-[10px] uppercase font-bold bg-sky-50/50 border border-sky-100 text-sky-500 px-2 py-0.5 rounded-md truncate max-w-[120px] inline-block" title={linkedProject?.name || "General Onboarding"}>
+                                              {linkedProject ? linkedProject.name : "General Onboarding"}
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* Project Details */}
+                                        <td className="p-4 px-6 text-sky-500 text-[10px]">
+                                          {linkedProject ? (
+                                            <div className="space-y-0.5 font-normal">
+                                              <p><span className="font-bold text-sky-600">Status:</span> {linkedProject.status}</p>
+                                              <p><span className="font-bold text-sky-600">Deadline:</span> {linkedProject.deadline || "None"}</p>
+                                              <p><span className="font-bold text-sky-600">Value:</span> ${Number(linkedProject.value).toLocaleString()}</p>
+                                            </div>
+                                          ) : (
+                                            <span className="opacity-50">No project associated</span>
+                                          )}
+                                        </td>
+
+                                        {/* Notes */}
+                                        <td className="p-4 px-6 text-sky-500">
+                                          {isEditing ? (
+                                            <input
+                                              type="text"
+                                              value={rowData.notes || ""}
+                                              placeholder="Add notes..."
+                                              onChange={(e) => setEditRowData({ ...rowData, notes: e.target.value })}
+                                              className="w-full p-1.5 border border-sky-100 rounded-lg text-xs bg-white text-sky-600 focus:outline-none focus:border-sky-300"
+                                            />
+                                          ) : (
+                                            <p className="text-sky-400 truncate max-w-[150px] font-normal italic" title={item.notes || "No notes"}>
+                                              {item.notes || <span className="opacity-50">No notes</span>}
+                                            </p>
+                                          )}
+                                        </td>
+
+                                        {/* Actions */}
+                                        <td className="p-4 px-6 text-right">
+                                          <div className="flex items-center justify-end gap-1.5">
+                                            {isEditing ? (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={handleSaveRow}
+                                                  className="p-1.5 rounded-lg text-green-500 hover:bg-green-50 transition-colors"
+                                                  title="Save Row"
+                                                >
+                                                  <Save className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setEditingRowId(null);
+                                                    setEditRowData(null);
+                                                  }}
+                                                  className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 transition-colors"
+                                                  title="Cancel"
+                                                >
+                                                  <X className="w-3.5 h-3.5" />
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleStartEditRow(item)}
+                                                  className="p-1.5 rounded-lg text-sky-500 hover:bg-sky-50 transition-colors"
+                                                  title="Edit Notes & Project"
+                                                >
+                                                  <Edit className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleRemoveTrackedItem(item.id)}
+                                                  className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                  title="Remove from tracking table"
+                                                >
+                                                  <Trash className="w-3.5 h-3.5" />
+                                                </button>
+                                              </>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
                     );
-                  })}
+                  })()}
+                  
                 </div>
               )}
             </div>

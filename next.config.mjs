@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  reactStrictMode: false,
   ...(process.env.GITHUB_ACTIONS && {
     output: "export"
   }),

@@ -244,7 +244,7 @@ export default function LeadsPage() {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
             {stages.map((stage) => {
               const columnLeads = filteredLeads.filter((l) => l.status === stage);
               return (

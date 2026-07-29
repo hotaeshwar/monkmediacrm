@@ -7,6 +7,12 @@ import { collection, onSnapshot, doc, deleteDoc, updateDoc } from "firebase/fire
 import { useRouter } from "next/navigation";
 import { KeyRound, ShieldAlert, Check, Copy, Trash2, Clock, Mail, Shield, RefreshCw } from "lucide-react";
 
+const WhatsAppIcon = () => (
+  <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.713-1.455L0 24zm6.59-11.236c-.144-.24-.016-.372.104-.492.112-.112.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.3-.74-1.78-.195-.47-.393-.407-.54-.415-.137-.007-.294-.008-.45-.008-.156 0-.41.058-.624.294-.216.236-.82.8-.82 1.95s.84 2.26.957 2.42c.117.16 1.65 2.518 3.99 3.53.557.24 1.002.38 1.344.49.56.18 1.07.15 1.47.09.447-.067 1.38-.564 1.575-1.11.195-.546.195-1.01.137-1.11-.058-.09-.215-.14-.45-.257-.235-.117-1.38-.68-1.595-.76-.215-.08-.37-.12-.527.12-.157.24-.61.76-.748.92-.137.16-.274.18-.51.06-.235-.117-.994-.365-1.894-1.17-.7-.624-1.173-1.396-1.31-1.63z"/>
+  </svg>
+);
+
 export default function PasswordResetsPage() {
   const { currentUser, role, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -21,6 +27,39 @@ export default function PasswordResetsPage() {
   const [customPassword, setCustomPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
   const [copiedId, setCopiedId] = useState("");
+  const [users, setUsers] = useState([]);
+
+  // Subscribe to Users collection to fetch their phone numbers
+  useEffect(() => {
+    if (!currentUser || role !== "admin") return;
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+      const list = [];
+      snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      setUsers(list);
+    });
+    return () => unsubUsers();
+  }, [currentUser, role]);
+
+  const getUserPhone = (email) => {
+    const u = users.find(x => x.email?.toLowerCase() === email?.toLowerCase());
+    return u ? u.phone : "";
+  };
+
+  const handleWhatsAppShare = (email, password, roleVal, customPhoneNum) => {
+    const cleanPhone = customPhoneNum ? customPhoneNum.replace(/[^0-9]/g, "") : "";
+    const portalPath = roleVal === "manager" ? "manager" : "team";
+    const text = `Hi! Here are your credentials for the Monk Media Portal:
+
+Email: ${email}
+Temporary Password: ${password}
+Portal Link: ${window.location.origin}/login/${portalPath}
+
+Please log in and update your password.`;
+
+    const encodedText = encodeURIComponent(text);
+    const url = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+    window.open(url, "_blank");
+  };
 
   // 1. Subscribe to Password Reset Requests in real-time
   useEffect(() => {
@@ -297,21 +336,44 @@ export default function PasswordResetsPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleCopy(req)}
-                          className="px-3 py-2 border border-sky-200 text-sky-600 bg-white hover:bg-sky-50 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5"
-                        >
-                          {copiedId === req.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                          {copiedId === req.id ? "Copied!" : "Copy info"}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRequest(req.id)}
-                          className="p-2 border border-red-50 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all duration-200"
-                          title="Dismiss"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <div className="flex flex-col gap-2 items-end flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopy(req)}
+                            className="px-3 py-2 border border-sky-200 text-sky-600 bg-white hover:bg-sky-50 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5"
+                          >
+                            {copiedId === req.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedId === req.id ? "Copied!" : "Copy info"}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRequest(req.id)}
+                            className="p-2 border border-red-50 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all duration-200"
+                            title="Dismiss"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        
+                        {/* WhatsApp Sharing */}
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder="WhatsApp Number"
+                            defaultValue={getUserPhone(req.email)}
+                            id={`wa-${req.id}`}
+                            className="w-32 px-2 py-1.5 border border-sky-100 rounded-xl text-[10px] text-sky-600 bg-white outline-none focus:border-sky-300"
+                          />
+                          <button
+                            onClick={() => {
+                              const inputVal = document.getElementById(`wa-${req.id}`)?.value || "";
+                              handleWhatsAppShare(req.email, req.tempPassword, req.role, inputVal);
+                            }}
+                            className="p-2 bg-[#25D366] hover:bg-[#20ba56] text-white rounded-xl transition-all shadow-sm"
+                            title="Share on WhatsApp"
+                          >
+                            <WhatsAppIcon />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}

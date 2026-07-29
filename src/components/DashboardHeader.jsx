@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { Clock, Calendar, Sun, CloudRain } from "lucide-react";
+import { Clock, Calendar, Sun, CloudRain, Search } from "lucide-react";
 
 export default function DashboardHeader() {
   const { currentUser } = useAuth();
@@ -152,17 +152,31 @@ export default function DashboardHeader() {
 
   return (
     <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-2 px-6 bg-white border-b border-sky-100 gap-4">
-      {/* Welcome messages */}
-      <div className="flex items-center gap-6">
-        <img src="/logonew.png" alt="Monk Media Logo" className="h-24 w-auto object-contain" />
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-sky-600">
-            Welcome, {userName}
-          </h1>
-          <p className="text-xs text-sky-400 font-bold uppercase tracking-wider mt-0.5">
-            Monk Media CRM Dashboard
-          </p>
+      {/* Welcome messages & Search */}
+      <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
+        <div className="flex items-center gap-6">
+          <img src="/logonew.png" alt="Monk Media Logo" className="h-24 w-auto object-contain" />
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-sky-600">
+              Welcome, {userName}
+            </h1>
+            <p className="text-xs text-sky-400 font-bold uppercase tracking-wider mt-0.5">
+              Monk Media CRM Dashboard
+            </p>
+          </div>
         </div>
+
+        {/* Global Search trigger pill */}
+        <button
+          onClick={() => window.dispatchEvent(new Event("open-global-search"))}
+          className="flex items-center gap-2.5 px-4 py-2 bg-white hover:bg-sky-50/50 border border-sky-100 rounded-full shadow-sm hover:shadow transition-all duration-200 text-sky-500 text-xs font-semibold"
+        >
+          <Search className="w-4 h-4 text-sky-400" />
+          <span>Search...</span>
+          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] text-sky-400 bg-sky-50 border border-sky-100 rounded-md">
+            Ctrl K
+          </kbd>
+        </button>
       </div>
 
       {/* Clock, Date & Weather Widgets */}
@@ -170,28 +184,28 @@ export default function DashboardHeader() {
         
         {/* Date Panel */}
         <div className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50/50 rounded-2xl border border-sky-100 shadow-sm">
-          <Calendar className="w-4 h-4 text-sky-400" />
+          <Calendar id="dashboard-header-date-icon" className="w-4 h-4 text-sky-400" />
           <span>{currentDate}</span>
         </div>
 
         {/* Local Clock Panel */}
         <div className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50/50 rounded-2xl border border-sky-100 shadow-sm min-w-[105px]">
-          <Clock className="w-4 h-4 text-sky-400" />
+          <Clock id="dashboard-header-local-clock-icon" className="w-4 h-4 text-sky-400" />
           <span>{currentTime}</span>
         </div>
 
         {/* IST Clock Panel */}
         <div className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50/50 rounded-2xl border border-amber-100 text-amber-600 shadow-sm min-w-[125px]">
-          <Clock className="w-4 h-4 text-amber-500" />
+          <Clock id="dashboard-header-ist-clock-icon" className="w-4 h-4 text-amber-500" />
           <span>IST: {istTime}</span>
         </div>
 
         {/* Weather Panel */}
         <div className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50/50 rounded-2xl border border-sky-100 shadow-sm">
           {temperature !== null && temperature < 10 ? (
-            <CloudRain className="w-4 h-4 text-sky-400" />
+            <CloudRain id="dashboard-header-weather-rain-icon" className="w-4 h-4 text-sky-400" />
           ) : (
-            <Sun className="w-4 h-4 text-sky-400 animate-spin-slow" />
+            <Sun id="dashboard-header-weather-sun-icon" className="w-4 h-4 text-sky-400 animate-spin-slow" />
           )}
           <span>
             {city}, {region} ({country}): {temperature !== null ? `${temperature}°C` : "Loading..."}

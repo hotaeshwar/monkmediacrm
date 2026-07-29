@@ -145,7 +145,7 @@ export default function ClientLayout({ children }) {
         )}
         <main
           className={`flex-1 flex flex-col min-w-0 bg-white transition-all duration-300 ${
-            isAuthPage ? "" : sidebarExpanded ? "lg:pl-64" : "lg:pl-20"
+            isAuthPage ? "" : `pt-16 lg:pt-0 ${sidebarExpanded ? "lg:pl-64" : "lg:pl-20"}`
           }`}
         >
           {children}

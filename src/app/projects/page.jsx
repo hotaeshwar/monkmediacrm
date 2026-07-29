@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, doc, updateDoc, addDoc, getDocs, deleteDoc, query, where, getDoc } from "firebase/firestore";
-import { FolderKanban, List, Search, Plus, Filter, ArrowRight, X, Trash2, Pencil } from "lucide-react";
+import { FolderKanban, List, Search, Plus, Filter, ArrowRight, X, Trash2, Pencil, Calendar, DollarSign, CheckCircle2, Activity } from "lucide-react";
 
 export default function ProjectsPage() {
   const { currentUser, role } = useAuth();
@@ -75,6 +75,25 @@ export default function ProjectsPage() {
   const [payNotes, setPayNotes] = useState("");
 
   const stages = ["Planned", "Awaiting Deposit", "In Progress", "Completed", "On Hold", "Cancelled"];
+
+  const getStageHeaderStyles = (stage) => {
+    switch (stage) {
+      case "Planned":
+        return { bg: "bg-slate-50/50", border: "border-slate-100", text: "text-slate-600", dot: "bg-slate-400" };
+      case "Awaiting Deposit":
+        return { bg: "bg-amber-50/50", border: "border-amber-100", text: "text-amber-600", dot: "bg-amber-500" };
+      case "In Progress":
+        return { bg: "bg-sky-50/50", border: "border-sky-100", text: "text-sky-600", dot: "bg-sky-500" };
+      case "Completed":
+        return { bg: "bg-emerald-50/50", border: "border-emerald-100", text: "text-emerald-600", dot: "bg-emerald-500" };
+      case "On Hold":
+        return { bg: "bg-rose-50/50", border: "border-rose-100", text: "text-rose-600", dot: "bg-rose-500" };
+      case "Cancelled":
+        return { bg: "bg-red-50/50", border: "border-red-100", text: "text-red-600", dot: "bg-red-500" };
+      default:
+        return { bg: "bg-sky-50/50", border: "border-sky-100", text: "text-sky-600", dot: "bg-sky-500" };
+    }
+  };
 
   useEffect(() => {
     if (!currentUser) return;
@@ -637,99 +656,130 @@ export default function ProjectsPage() {
         ) : (
           
           /* VIEW 2: KANBAN BOARD VIEW */
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
             {stages.map((stage) => {
               const stageProjects = filteredProjects.filter((p) => p.status === stage);
+              const style = getStageHeaderStyles(stage);
               return (
-                <div key={stage} className="bg-sky-50/20 border border-sky-100 rounded-3xl p-3.5 space-y-3.5">
+                <div key={stage} className={`${style.bg} border ${style.border} rounded-[32px] p-4 space-y-4 shadow-sm min-h-[450px]`}>
                   {/* Column Header */}
                   <div className="flex items-center justify-between pb-1">
-                    <span className="text-[10px] font-bold text-sky-500 uppercase tracking-wider">{stage}</span>
-                    <span className="text-[10px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-100">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${style.dot}`} />
+                      <span className={`text-[10px] font-bold ${style.text} uppercase tracking-wider`}>{stage}</span>
+                    </div>
+                    <span className={`text-[10px] font-bold ${style.text} bg-white px-2 py-0.5 rounded-lg border ${style.border}`}>
                       {stageProjects.length}
                     </span>
                   </div>
 
                   {/* Cards Pool */}
-                  <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-0.5">
-                    {stageProjects.map((p) => (
-                      <div
-                        key={p.id}
-                        className="p-3.5 bg-white border border-sky-100 hover:border-sky-300 rounded-2xl shadow-sm hover:shadow-md transition-all space-y-2.5"
-                      >
-                        <div className="flex justify-between items-start gap-2">
-                          <h4 className="text-xs font-bold text-sky-600 leading-snug">{p.name}</h4>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {(role === "admin" || role === "manager") && (
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => handleStartBillProject(p)}
-                                  className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-100 uppercase tracking-wide transition-all"
-                                  title="Bill Project"
-                                >
-                                  Bill
-                                </button>
-                                <button
-                                  onClick={() => handleStartProjectPayment(p)}
-                                  className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 uppercase tracking-wide transition-all"
-                                  title="Log Payment"
-                                >
-                                  Pay
-                                </button>
-                                <button
-                                  onClick={() => handleStartEditProject(p)}
-                                  className="text-sky-400 hover:text-sky-600 transition"
-                                  title="Edit Project"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
-                            {role === "admin" && (
-                              <button
-                                onClick={() => handleDeleteProject(p.id)}
-                                className="text-red-400 hover:text-red-500 transition"
-                                title="Delete Project"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                  <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-0.5">
+                    {stageProjects.map((p) => {
+                      const clientName = getClientName(p.clientId);
+                      return (
+                        <div
+                          key={p.id}
+                          className="p-4 bg-white border border-sky-100 hover:border-sky-300 hover:shadow-md transition-all duration-300 rounded-[24px] space-y-3 relative group"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-start gap-2">
+                              <h4 className="text-xs font-bold text-sky-700 leading-snug truncate max-w-[130px] group-hover:text-sky-800" title={p.name}>
+                                {p.name}
+                              </h4>
+                              {p.value > 0 && (
+                                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                                  ${Number(p.value).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[9px] font-bold text-sky-500 bg-sky-50/50 border border-sky-100 px-2 py-0.5 rounded-md inline-block max-w-full truncate" title={clientName}>
+                              {clientName}
+                            </p>
                           </div>
-                        </div>
-                        <p className="text-[10px] text-sky-400 font-bold uppercase">{getClientName(p.clientId)}</p>
-                        
-                        {/* Progress */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[8px] font-bold text-sky-400">
-                            <span>Progress</span>
-                            <span>{p.progressPercent || 0}%</span>
+                          
+                          {/* Progress */}
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-[8px] font-extrabold text-sky-400 uppercase tracking-wide">
+                              <span className="flex items-center gap-1">
+                                {p.status === "Completed" ? (
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                                ) : (
+                                  <Activity className="w-2.5 h-2.5 text-sky-400" />
+                                )}
+                                Progress
+                              </span>
+                              <span>{p.progressPercent || 0}%</span>
+                            </div>
+                            <div className="w-full bg-sky-50/60 rounded-full h-1.5 border border-sky-50/20">
+                              <div className={`h-1.5 rounded-full transition-all duration-500 ${p.status === "Completed" ? "bg-emerald-500" : "bg-sky-500"}`} style={{ width: `${p.progressPercent || 0}%` }}></div>
+                            </div>
                           </div>
-                          <div className="w-full bg-sky-50 rounded-full h-1">
-                            <div className="bg-sky-500 h-1 rounded-full" style={{ width: `${p.progressPercent || 0}%` }}></div>
-                          </div>
-                        </div>
 
-                        {/* Footer details */}
-                        <div className="pt-2 border-t border-sky-50 flex items-center justify-between">
-                          <span className="text-[9px] text-sky-400 font-medium">
-                            {p.startDate ? p.startDate + " to " + (p.endDate || p.deadline) : "Due: " + (p.deadline || "None")}
-                          </span>
-                          <select
-                            value={p.status}
-                            onChange={(e) => handleUpdateStatus(p.id, e.target.value)}
-                            className="p-1 border border-sky-100 rounded-lg text-sky-600 text-[8px] font-bold bg-white"
-                          >
-                            {stages.map((stg) => (
-                              <option key={stg} value={stg}>
-                                {stg}
-                              </option>
-                            ))}
-                          </select>
+                          {/* Date Range */}
+                          <div className="flex items-center gap-1 text-[8px] text-sky-400 font-semibold bg-sky-50/20 p-1.5 rounded-xl border border-sky-50/30">
+                            <Calendar className="w-3.5 h-3.5 text-sky-300 flex-shrink-0" />
+                            <span className="truncate">
+                              {p.startDate ? p.startDate + " - " + (p.endDate || p.deadline) : "Deadline: " + (p.deadline || "None")}
+                            </span>
+                          </div>
+
+                          {/* Quick Admin Actions */}
+                          <div className="pt-2 border-t border-sky-50/60 flex items-center justify-between gap-1.5">
+                            <select
+                              value={p.status}
+                              onChange={(e) => handleUpdateStatus(p.id, e.target.value)}
+                              className="p-1 border border-sky-100 rounded-lg text-sky-600 text-[8px] font-bold bg-white focus:outline-none focus:border-sky-300 max-w-[70px] truncate"
+                            >
+                              {stages.map((stg) => (
+                                <option key={stg} value={stg}>
+                                  {stg}
+                                </option>
+                              ))}
+                            </select>
+
+                            <div className="flex items-center gap-1">
+                              {(role === "admin" || role === "manager") && (
+                                <>
+                                  <button
+                                    onClick={() => handleStartBillProject(p)}
+                                    className="text-[8px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-100 uppercase transition-all"
+                                    title="Bill Project"
+                                  >
+                                    Bill
+                                  </button>
+                                  <button
+                                    onClick={() => handleStartProjectPayment(p)}
+                                    className="text-[8px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 uppercase transition-all"
+                                    title="Log Payment"
+                                  >
+                                    Pay
+                                  </button>
+                                  <button
+                                    onClick={() => handleStartEditProject(p)}
+                                    className="p-1 text-sky-400 hover:text-sky-600 transition border border-transparent hover:border-sky-100 rounded"
+                                    title="Edit Project"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                </>
+                              )}
+                              {role === "admin" && (
+                                <button
+                                  onClick={() => handleDeleteProject(p.id)}
+                                  className="p-1 text-red-400 hover:text-red-600 transition border border-transparent hover:border-red-100 rounded"
+                                  title="Delete Project"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {stageProjects.length === 0 && (
-                      <div className="text-center py-8 text-sky-300 text-[10px] font-medium italic border border-dashed border-sky-100 rounded-2xl bg-white/50">
+                      <div className="text-center py-10 text-sky-300 text-[10px] font-semibold italic border border-dashed border-sky-100/50 rounded-[20px] bg-white/40">
                         Empty column
                       </div>
                     )}
