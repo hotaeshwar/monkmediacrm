@@ -20,7 +20,8 @@ import {
   Menu,
   X,
   FileText,
-  KeyRound
+  KeyRound,
+  Search
 } from "lucide-react";
 
 export default function Sidebar({ expanded, setExpanded, mobileOpen, setMobileOpen }) {
@@ -62,6 +63,27 @@ export default function Sidebar({ expanded, setExpanded, mobileOpen, setMobileOp
 
       {/* Nav Items */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        {/* Global Search Trigger */}
+        <button
+          onClick={() => window.dispatchEvent(new Event("open-global-search"))}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 bg-sky-50/40 hover:bg-sky-50 text-sky-500 hover:text-sky-600 border border-sky-100/30 ${
+            expanded || mobileOpen ? "justify-start" : "justify-center"
+          }`}
+          title="Search CRM (Ctrl K)"
+        >
+          <Search className="w-5 h-5 text-sky-400 flex-shrink-0" />
+          {(expanded || mobileOpen) && (
+            <div className="flex-1 flex items-center justify-between min-w-0">
+              <span className="text-xs font-semibold truncate">Search...</span>
+              <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] text-sky-400 bg-white border border-sky-100 rounded-md">
+                Ctrl K
+              </kbd>
+            </div>
+          )}
+        </button>
+
+        <div className="h-2" />
+
         {filteredNav.map((item) => {
           const isActive = pathname?.startsWith(item.href);
           return (
@@ -170,12 +192,21 @@ export default function Sidebar({ expanded, setExpanded, mobileOpen, setMobileOp
             MONK MEDIA
           </span>
         </Link>
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="p-1.5 rounded-lg hover:bg-sky-50 text-sky-500 border border-sky-100"
-        >
-          <Menu className="w-6 h-6" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.dispatchEvent(new Event("open-global-search"))}
+            className="p-2 rounded-lg hover:bg-sky-50 text-sky-500 border border-sky-100 flex items-center justify-center"
+            title="Search"
+          >
+            <Search className="w-5 h-5 text-sky-500" />
+          </button>
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="p-1.5 rounded-lg hover:bg-sky-50 text-sky-500 border border-sky-100"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+        </div>
       </div>
 
       {/* Mobile Slide-over Sidebar Drawer */}

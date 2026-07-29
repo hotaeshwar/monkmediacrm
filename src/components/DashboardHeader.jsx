@@ -9,8 +9,6 @@ import { Clock, Calendar, Sun, CloudRain, Search } from "lucide-react";
 export default function DashboardHeader() {
   const { currentUser } = useAuth();
   const [userName, setUserName] = useState("Team Member");
-  const [currentTime, setCurrentTime] = useState("");
-  const [istTime, setIstTime] = useState("");
   const [currentDate, setCurrentDate] = useState("");
   const [temperature, setTemperature] = useState(null);
   const [city, setCity] = useState("Toronto");
@@ -35,32 +33,10 @@ export default function DashboardHeader() {
     fetchName();
   }, [currentUser]);
 
-  // Live clock and date update
+  // Live date update (once on timezone loaded or at midnight, no 1s intervals)
   useEffect(() => {
-    const updateTime = () => {
+    const updateDate = () => {
       const now = new Date();
-      
-      const timeOpts = {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: true,
-      };
-      if (timezone) {
-        timeOpts.timeZone = timezone;
-      }
-
-      setCurrentTime(now.toLocaleTimeString("en-US", timeOpts));
-
-      const istOpts = {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: true,
-        timeZone: "Asia/Kolkata",
-      };
-      setIstTime(now.toLocaleTimeString("en-US", istOpts));
-
       const dateOpts = {
         weekday: "long",
         year: "numeric",
@@ -70,13 +46,9 @@ export default function DashboardHeader() {
       if (timezone) {
         dateOpts.timeZone = timezone;
       }
-
       setCurrentDate(now.toLocaleDateString("en-US", dateOpts));
     };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
+    updateDate();
   }, [timezone]);
 
   // Weather & IP Geolocation fetch using Open-Meteo & ipapi
@@ -152,31 +124,17 @@ export default function DashboardHeader() {
 
   return (
     <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-2 px-6 bg-white border-b border-sky-100 gap-4">
-      {/* Welcome messages & Search */}
-      <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
-        <div className="flex items-center gap-6">
-          <img src="/logonew.png" alt="Monk Media Logo" className="h-24 w-auto object-contain" />
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-sky-600">
-              Welcome, {userName}
-            </h1>
-            <p className="text-xs text-sky-400 font-bold uppercase tracking-wider mt-0.5">
-              Monk Media CRM Dashboard
-            </p>
-          </div>
+      {/* Welcome messages */}
+      <div className="flex items-center gap-6">
+        <img src="/logonew.png" alt="Monk Media Logo" className="h-24 w-auto object-contain" />
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-sky-600">
+            Welcome, {userName}
+          </h1>
+          <p className="text-xs text-sky-400 font-bold uppercase tracking-wider mt-0.5">
+            Monk Media CRM Dashboard
+          </p>
         </div>
-
-        {/* Global Search trigger pill */}
-        <button
-          onClick={() => window.dispatchEvent(new Event("open-global-search"))}
-          className="flex items-center gap-2.5 px-4 py-2 bg-white hover:bg-sky-50/50 border border-sky-100 rounded-full shadow-sm hover:shadow transition-all duration-200 text-sky-500 text-xs font-semibold"
-        >
-          <Search className="w-4 h-4 text-sky-400" />
-          <span>Search...</span>
-          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] text-sky-400 bg-sky-50 border border-sky-100 rounded-md">
-            Ctrl K
-          </kbd>
-        </button>
       </div>
 
       {/* Clock, Date & Weather Widgets */}
@@ -189,16 +147,10 @@ export default function DashboardHeader() {
         </div>
 
         {/* Local Clock Panel */}
-        <div className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50/50 rounded-2xl border border-sky-100 shadow-sm min-w-[105px]">
-          <Clock id="dashboard-header-local-clock-icon" className="w-4 h-4 text-sky-400" />
-          <span>{currentTime}</span>
-        </div>
+        <LocalClock timezone={timezone} />
 
         {/* IST Clock Panel */}
-        <div className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50/50 rounded-2xl border border-amber-100 text-amber-600 shadow-sm min-w-[125px]">
-          <Clock id="dashboard-header-ist-clock-icon" className="w-4 h-4 text-amber-500" />
-          <span>IST: {istTime}</span>
-        </div>
+        <IstClock />
 
         {/* Weather Panel */}
         <div className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50/50 rounded-2xl border border-sky-100 shadow-sm">
@@ -214,5 +166,67 @@ export default function DashboardHeader() {
         
       </div>
     </header>
+  );
+}
+
+// Local Clock Subcomponent (Self-contained 1s updates to prevent parent re-renders)
+function LocalClock({ timezone }) {
+  const [currentTime, setCurrentTime] = useState("");
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const timeOpts = {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      };
+      if (timezone) {
+        timeOpts.timeZone = timezone;
+      }
+      setCurrentTime(now.toLocaleTimeString("en-US", timeOpts));
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, [timezone]);
+
+  return (
+    <div className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50/50 rounded-2xl border border-sky-100 shadow-sm min-w-[105px]">
+      <Clock id="dashboard-header-local-clock-icon" className="w-4 h-4 text-sky-400" />
+      <span className="font-mono">{currentTime}</span>
+    </div>
+  );
+}
+
+// IST Clock Subcomponent (Self-contained 1s updates to prevent parent re-renders)
+function IstClock() {
+  const [istTime, setIstTime] = useState("");
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const istOpts = {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Kolkata",
+      };
+      setIstTime(now.toLocaleTimeString("en-US", istOpts));
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50/50 rounded-2xl border border-amber-100 text-amber-600 shadow-sm min-w-[125px]">
+      <Clock id="dashboard-header-ist-clock-icon" className="w-4 h-4 text-amber-500" />
+      <span className="font-mono">IST: {istTime}</span>
+    </div>
   );
 }
