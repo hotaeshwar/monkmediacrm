@@ -461,7 +461,57 @@ export default function ProjectsPage() {
         notes: "",
       };
 
-      await addDoc(collection(db, "projects"), payload);
+      const projRef = await addDoc(collection(db, "projects"), payload);
+
+      // Auto-create invoice for project value if project value is set
+      const projectVal = Number(projVal) || 0;
+      if (projectVal > 0) {
+        const parentClient = clients.find((c) => c.id === projClientId);
+        const clientName = parentClient ? parentClient.businessName : "General";
+        const clientAttention = parentClient ? parentClient.contactPerson : "";
+        const clientEmail = parentClient ? parentClient.email : "";
+
+        const cleanProjName = projName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+        const invoiceNum = `INV-${cleanProjName}-${Date.now().toString().slice(-6)}`;
+        
+        const addDays = (dateStr, days) => {
+          const d = new Date(dateStr + "T12:00:00");
+          d.setDate(d.getDate() + days);
+          return d.toISOString().split("T")[0];
+        };
+
+        const projStart = projStartDate || new Date().toISOString().split("T")[0];
+        const dueStr = addDays(projStart, 14);
+        const taxRate = parentClient?.financials?.taxRate || 13;
+        const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
+        const total = projectVal + tax;
+
+        await addDoc(collection(db, "invoices"), {
+          invoiceNumber: invoiceNum,
+          clientId: projClientId,
+          projectId: projRef.id,
+          invoiceDate: projStart,
+          dueDate: dueStr,
+          amount: projectVal,
+          tax,
+          total,
+          amountPaid: 0,
+          balance: total,
+          status: "Due",
+          paymentMethod: parentClient?.financials?.paymentMethod || "Credit Card",
+          receiptUrl: "",
+          notes: `Automatically generated invoice for project campaign "${projName}".`,
+          description: `Project Campaign: ${projName}`,
+          clientName,
+          clientAttention,
+          clientEmail,
+          craNumber: "777790411",
+          hstNumber: "777790411 RT 0001",
+          fromCompanyName: "14689941 Canada Inc.",
+          fromBrandName: "Operating as Monk Media",
+          fromEmail: "info@monkmedia.ca",
+        });
+      }
       
       // Reset Form
       setProjName("");
@@ -474,6 +524,7 @@ export default function ProjectsPage() {
       setProjManager("");
       setProjDescription("");
       setCreateOpen(false);
+      alert("Project created successfully!");
     } catch (err) {
       setFormError(err.message);
     }
@@ -1448,7 +1499,7 @@ export default function ProjectsPage() {
 
                   {payProjInvoices.length === 0 ? (
                     <div className="p-4 bg-sky-50/20 text-sky-500 text-center rounded-2xl border border-sky-100 font-bold">
-                      No unpaid invoices found for this project. Please click "Bill" first to issue an invoice.
+                      No unpaid invoices found for this project. Please click &quot;Bill&quot; first to issue an invoice.
                     </div>
                   ) : (
                     <>

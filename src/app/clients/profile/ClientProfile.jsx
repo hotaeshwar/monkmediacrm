@@ -552,11 +552,62 @@ export default function ClientProfilePage() {
         notes: "",
       };
 
-      await addDoc(collection(db, "projects"), payload);
+      const projRef = await addDoc(collection(db, "projects"), payload);
+
+      // Auto-create invoice for project value if project value is set
+      const projectVal = Number(newProjValue) || 0;
+      if (projectVal > 0) {
+        const clientName = client ? client.businessName : "General";
+        const clientAttention = client ? client.contactPerson : "";
+        const clientEmail = client ? client.email : "";
+
+        const cleanProjName = newProjName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+        const invoiceNum = `INV-${cleanProjName}-${Date.now().toString().slice(-6)}`;
+        
+        const addDays = (dateStr, days) => {
+          const d = new Date(dateStr + "T12:00:00");
+          d.setDate(d.getDate() + days);
+          return d.toISOString().split("T")[0];
+        };
+
+        const projStart = newProjStartDate || new Date().toISOString().split("T")[0];
+        const dueStr = addDays(projStart, 14);
+        const taxRate = client?.financials?.taxRate || 13;
+        const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
+        const total = projectVal + tax;
+
+        await addDoc(collection(db, "invoices"), {
+          invoiceNumber: invoiceNum,
+          clientId: id,
+          projectId: projRef.id,
+          invoiceDate: projStart,
+          dueDate: dueStr,
+          amount: projectVal,
+          tax,
+          total,
+          amountPaid: 0,
+          balance: total,
+          status: "Due",
+          paymentMethod: client?.financials?.paymentMethod || "Credit Card",
+          receiptUrl: "",
+          notes: `Automatically generated invoice for project campaign "${newProjName}".`,
+          description: `Project Campaign: ${newProjName}`,
+          clientName,
+          clientAttention,
+          clientEmail,
+          craNumber: "777790411",
+          hstNumber: "777790411 RT 0001",
+          fromCompanyName: "14689941 Canada Inc.",
+          fromBrandName: "Operating as Monk Media",
+          fromEmail: "info@monkmedia.ca",
+        });
+      }
+
       setNewProjName("");
       setNewProjStartDate("");
       setNewProjEndDate("");
       setNewProjValue("");
+      alert("Project created successfully!");
     } catch (err) {
       alert("Error adding project: " + err.message);
     }
@@ -1539,7 +1590,8 @@ export default function ClientProfilePage() {
 
               {/* Projects List */}
               <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
-                <table className="w-full text-left">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
                   <thead>
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                       <th className="p-4 px-6">Name</th>
@@ -1608,6 +1660,7 @@ export default function ClientProfilePage() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* Edit Project Drawer */}
@@ -1657,7 +1710,7 @@ export default function ClientProfilePage() {
                           </select>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
                               Campaign Value ($)
@@ -1702,7 +1755,7 @@ export default function ClientProfilePage() {
                            </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
                               Status / Stage
@@ -2033,7 +2086,7 @@ export default function ClientProfilePage() {
 
                         {payProjInvoices.length === 0 ? (
                           <div className="p-4 bg-sky-50/20 text-sky-500 text-center rounded-2xl border border-sky-100 font-bold">
-                            No unpaid invoices found for this project. Please click "Bill" first to issue an invoice.
+                            No unpaid invoices found for this project. Please click &quot;Bill&quot; first to issue an invoice.
                           </div>
                         ) : (
                           <>
@@ -2305,7 +2358,8 @@ export default function ClientProfilePage() {
 
               {/* Content Grid */}
               <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
-                <table className="w-full text-left">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
                   <thead>
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                       <th className="p-4 px-6">Title</th>
@@ -2357,6 +2411,7 @@ export default function ClientProfilePage() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
 
             </div>

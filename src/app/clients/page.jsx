@@ -183,8 +183,51 @@ export default function ClientsPage() {
       // Add to Firestore
       const docRef = await addDoc(collection(db, "clients"), clientPayload);
 
+      const addDays = (dateStr, days) => {
+        const d = new Date(dateStr + "T12:00:00");
+        d.setDate(d.getDate() + days);
+        return d.toISOString().split("T")[0];
+      };
+
+      // Auto-create retainer invoice if monthly retainer is set
+      const retainerVal = Number(monthlyRetainer) || 0;
+      if (retainerVal > 0) {
+        const cleanName = finalBusinessName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+        const invoiceNum = `INV-${cleanName}-${Date.now().toString().slice(-6)}`;
+        const dueStr = addDays(onboardingDate, 14);
+        const tax = Number(((retainerVal * 13) / 100).toFixed(2));
+        const total = retainerVal + tax;
+
+        await addDoc(collection(db, "invoices"), {
+          invoiceNumber: invoiceNum,
+          clientId: docRef.id,
+          projectId: "",
+          invoiceDate: onboardingDate,
+          dueDate: dueStr,
+          amount: retainerVal,
+          tax,
+          total,
+          amountPaid: 0,
+          balance: total,
+          status: "Due",
+          paymentMethod: "Credit Card",
+          receiptUrl: "",
+          notes: "Automatically generated invoice for client onboarding monthly retainer.",
+          description: "Monthly Retainer Billing",
+          clientName: finalBusinessName,
+          clientAttention: contactPerson || "",
+          clientEmail: email || "",
+          craNumber: "777790411",
+          hstNumber: "777790411 RT 0001",
+          fromCompanyName: "14689941 Canada Inc.",
+          fromBrandName: "Operating as Monk Media",
+          fromEmail: "info@monkmedia.ca",
+        });
+      }
+
       // Create an initial project if specified
       if (initialProjName.trim()) {
+        const projectVal = Number(initialProjVal) || 0;
         const projectPayload = {
           name: initialProjName.trim(),
           clientId: docRef.id,
@@ -195,7 +238,7 @@ export default function ClientsPage() {
           endDate: initialProjEndDate || "",
           deadline: initialProjEndDate || "",
           completionDate: "",
-          value: Number(initialProjVal) || 0,
+          value: projectVal,
           estimatedCost: 0,
           actualCost: 0,
           profit: 0,
@@ -207,7 +250,43 @@ export default function ClientsPage() {
           driveFolder: validLinks.length > 0 ? validLinks[0].url : "",
           notes: "",
         };
-        await addDoc(collection(db, "projects"), projectPayload);
+        const projRef = await addDoc(collection(db, "projects"), projectPayload);
+
+        // Auto-create invoice for initial project value if project value is set
+        if (projectVal > 0) {
+          const cleanProjName = initialProjName.trim().substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+          const invoiceNum = `INV-${cleanProjName}-${Date.now().toString().slice(-6)}`;
+          const projStart = initialProjStartDate || onboardingDate;
+          const dueStr = addDays(projStart, 14);
+          const tax = Number(((projectVal * 13) / 100).toFixed(2));
+          const total = projectVal + tax;
+
+          await addDoc(collection(db, "invoices"), {
+            invoiceNumber: invoiceNum,
+            clientId: docRef.id,
+            projectId: projRef.id,
+            invoiceDate: projStart,
+            dueDate: dueStr,
+            amount: projectVal,
+            tax,
+            total,
+            amountPaid: 0,
+            balance: total,
+            status: "Due",
+            paymentMethod: "Credit Card",
+            receiptUrl: "",
+            notes: `Automatically generated invoice for initial project campaign "${initialProjName.trim()}".`,
+            description: `Project Campaign: ${initialProjName.trim()}`,
+            clientName: finalBusinessName,
+            clientAttention: contactPerson || "",
+            clientEmail: email || "",
+            craNumber: "777790411",
+            hstNumber: "777790411 RT 0001",
+            fromCompanyName: "14689941 Canada Inc.",
+            fromBrandName: "Operating as Monk Media",
+            fromEmail: "info@monkmedia.ca",
+          });
+        }
       }
 
       // Initialize an empty onboarding checklist document for this client
@@ -255,6 +334,7 @@ export default function ClientsPage() {
 
       // Refresh list
       fetchData();
+      alert("Client created successfully!");
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -608,7 +688,7 @@ export default function ClientsPage() {
                   <div className="pt-4 border-t border-sky-100 space-y-4">
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-sky-500">Initial Project Campaign</h4>
-                      <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Directly register client's first campaign</p>
+                      <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Directly register client&apos;s first campaign</p>
                     </div>
 
                     <div className="space-y-4 bg-sky-50/20 p-4 rounded-3xl border border-sky-100/50">

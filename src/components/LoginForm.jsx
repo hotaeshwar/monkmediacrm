@@ -186,7 +186,7 @@ export default function LoginForm({ portalRole, portalName }) {
               <KeyRound className="w-8 h-8 text-sky-500" />
               <h4 className="text-sm font-bold text-sky-600">Forgot Password</h4>
               <p className="text-[11px] text-sky-400 leading-relaxed">
-                Enter your email address and we'll notify the admin to reset your password.
+                Enter your email address and we&apos;ll notify the admin to reset your password.
               </p>
             </div>
 

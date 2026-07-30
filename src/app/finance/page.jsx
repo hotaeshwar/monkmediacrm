@@ -929,7 +929,8 @@ export default function FinancePage() {
             {/* SUB-TAB 1: INVOICES */}
             {activeTab === "invoices" && (
               <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
-                <table className="w-full text-left">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
                   <thead>
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                       <th className="p-4 px-6">Invoice #</th>
@@ -1057,13 +1058,15 @@ export default function FinancePage() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
 
             {/* SUB-TAB 2: EXPENSES */}
             {activeTab === "expenses" && (
               <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
-                <table className="w-full text-left">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
                   <thead>
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                       <th className="p-4 px-6">Category</th>
@@ -1114,13 +1117,15 @@ export default function FinancePage() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
 
             {/* SUB-TAB 3: PAYMENTS */}
             {activeTab === "payments" && (
               <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
-                <table className="w-full text-left">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
                   <thead>
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                       <th className="p-4 px-6">Invoice ID</th>
@@ -1171,6 +1176,7 @@ export default function FinancePage() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
 
@@ -1418,7 +1424,7 @@ export default function FinancePage() {
                   </div>
 
                   {invIncludeCraHst && (
-                    <div className="grid grid-cols-2 gap-4 animate-fadeIn">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fadeIn">
                       <div>
                         <label className="block text-sky-500 mb-1">CRA Business Number</label>
                         <input
@@ -1896,7 +1902,8 @@ export default function FinancePage() {
 
                   {/* Line Item List */}
                   <div className="border border-gray-100 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="bg-[#0e2430] text-white text-xs uppercase font-bold">
                           <th className="p-4">Description</th>
@@ -1910,6 +1917,7 @@ export default function FinancePage() {
                         </tr>
                       </tbody>
                     </table>
+                    </div>
                   </div>
 
                   {/* Breakdown Calculation */}
@@ -2005,7 +2013,7 @@ export default function FinancePage() {
                 {/* General Invoice Info */}
                 <div className="space-y-4">
                   <h4 className="text-[10px] font-black uppercase text-sky-400 tracking-wider border-b border-sky-100 pb-1">General Details</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sky-500 mb-1">Invoice Number</label>
                       <input
@@ -2037,7 +2045,7 @@ export default function FinancePage() {
                       className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sky-500 mb-1">Retainer Amount ($)</label>
                       <input
@@ -2074,7 +2082,7 @@ export default function FinancePage() {
                 {/* Recipient Details */}
                 <div className="space-y-4 pt-2">
                   <h4 className="text-[10px] font-black uppercase text-sky-400 tracking-wider border-b border-sky-100 pb-1">Client (Bill To) Information</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sky-500 mb-1">Client Business Name</label>
                       <input
@@ -2111,7 +2119,7 @@ export default function FinancePage() {
                 {/* Sender Details */}
                 <div className="space-y-4 pt-2">
                   <h4 className="text-[10px] font-black uppercase text-sky-400 tracking-wider border-b border-sky-100 pb-1">Sender (From) Information</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sky-500 mb-1">Sender Company Name</label>
                       <input
@@ -2167,7 +2175,7 @@ export default function FinancePage() {
                   </div>
 
                   {editInvIncludeCraHst && (
-                    <div className="grid grid-cols-2 gap-4 animate-fadeIn">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fadeIn">
                       <div>
                         <label className="block text-sky-500 mb-1">CRA Business Number</label>
                         <input

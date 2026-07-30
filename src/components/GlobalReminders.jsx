@@ -40,7 +40,7 @@ const getAudioContext = () => {
 };
 
 export default function GlobalReminders() {
-  const { currentUser, role } = useAuth();
+  const { currentUser, role, clientId } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [activeAlarm, setActiveAlarm] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -98,10 +98,20 @@ export default function GlobalReminders() {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // Fetch invoices for admin/manager
+  // Fetch invoices for admin/manager/client
   useEffect(() => {
-    if (!currentUser || (role !== "admin" && role !== "manager")) return;
-    const unsubscribe = onSnapshot(collection(db, "invoices"), (snapshot) => {
+    if (!currentUser || !role) return;
+
+    let q;
+    if (role === "admin" || role === "manager") {
+      q = collection(db, "invoices");
+    } else if (role === "client" && clientId) {
+      q = query(collection(db, "invoices"), where("clientId", "==", clientId));
+    } else {
+      return;
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = [];
       snapshot.forEach((doc) => {
         list.push({ id: doc.id, ...doc.data() });
@@ -109,7 +119,7 @@ export default function GlobalReminders() {
       setInvoices(list);
     });
     return () => unsubscribe();
-  }, [currentUser, role]);
+  }, [currentUser, role, clientId]);
 
   // Filter for active overdue/due today tasks using timezone-safe local date string
   const getOverdueTasks = () => {
@@ -362,7 +372,7 @@ export default function GlobalReminders() {
                 </div>
 
                 {/* Overdue Invoices / Retainers Section */}
-                {(role === "admin" || role === "manager") && (
+                {(role === "admin" || role === "manager" || role === "client") && (
                   <div className="pt-4 border-t border-sky-100/50 space-y-3">
                     <h4 className="text-[10px] uppercase tracking-widest font-black text-sky-400">
                       Overdue Invoices / Retainers ({overdueInvoices.length})
