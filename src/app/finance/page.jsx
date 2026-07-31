@@ -249,6 +249,7 @@ export default function FinancePage() {
   // Filter scoped data by selectedMonth using startsWith
   const filteredInvoices = scopedInvoices.filter((inv) => inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth));
   const filteredExpenses = scopedExpenses.filter((exp) => exp.date && exp.date.startsWith(selectedMonth));
+  const filteredPayments = scopedPayments.filter((pay) => pay.dateReceived && pay.dateReceived.startsWith(selectedMonth));
 
   const totalBilling = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
   const totalReceived = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
@@ -1024,14 +1025,14 @@ export default function FinancePage() {
                     </tr>
                   </thead>
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
-                    {scopedInvoices.length === 0 ? (
+                    {filteredInvoices.length === 0 ? (
                       <tr>
                         <td colSpan={9} className="p-8 text-center text-sky-400 font-medium">
-                          No logged invoices found.
+                          No logged invoices found for this period.
                         </td>
                       </tr>
                     ) : (
-                      scopedInvoices.map((inv) => {
+                      filteredInvoices.map((inv) => {
                         const isOverdue = inv.status !== "Received" && inv.dueDate < todayStr;
                         return (
                           <tr key={inv.id} className="hover:bg-sky-50/10">
@@ -1163,14 +1164,14 @@ export default function FinancePage() {
                     </tr>
                   </thead>
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
-                    {scopedExpenses.length === 0 ? (
+                    {filteredExpenses.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="p-8 text-center text-sky-400 font-medium">
-                          No logged outflow items found.
+                          No logged outflow items found for this period.
                         </td>
                       </tr>
                     ) : (
-                      scopedExpenses.map((exp) => (
+                      filteredExpenses.map((exp) => (
                         <tr key={exp.id} className="hover:bg-sky-50/10">
                           <td className="p-4 px-6 font-bold">{exp.category}</td>
                           <td className="p-4 px-6">{exp.date}</td>
@@ -1222,14 +1223,14 @@ export default function FinancePage() {
                     </tr>
                   </thead>
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
-                    {scopedPayments.length === 0 ? (
+                    {filteredPayments.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="p-8 text-center text-sky-400 font-medium">
-                          No payments processed yet.
+                          No payments processed for this period.
                         </td>
                       </tr>
                     ) : (
-                      scopedPayments.map((pay) => (
+                      filteredPayments.map((pay) => (
                         <tr key={pay.id} className="hover:bg-sky-50/10">
                           <td className="p-4 px-6 font-bold">Ref ID: {pay.invoiceId.substring(0, 8)}...</td>
                           <td className="p-4 px-6">{pay.dateReceived}</td>
