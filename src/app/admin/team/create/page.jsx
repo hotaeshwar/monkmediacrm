@@ -205,7 +205,17 @@ Please keep these credentials secure.`;
         }),
       });
 
-      const data = await res.json();
+      let data = {};
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(`Server Error (${res.status}): ${res.statusText || "Internal Server Error"}`);
+        }
+      }
+
       if (!res.ok) {
         throw new Error(data.error || "Failed to create user account.");
       }
