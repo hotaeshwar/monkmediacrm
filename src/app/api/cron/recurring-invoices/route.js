@@ -36,74 +36,100 @@ export async function GET(request) {
           .where("billingType", "==", "Retainer")
           .get();
 
-        let amount = 0;
+        const activeRetainerProjects = [];
         for (const pDoc of projectsSnap.docs) {
           const pData = pDoc.data();
-          if (pData.status !== "Completed") {
-            amount += (Number(pData.value) || 0);
+          if (pData.status !== "Completed" && pData.status !== "Cancelled") {
+            activeRetainerProjects.push({ id: pDoc.id, ...pData });
           }
         }
 
-        if (amount <= 0) continue;
-        
-        const taxRate = Number(financials.taxRate) || 13;
-        const tax = Number(((amount * taxRate) / 100).toFixed(2));
-        const total = amount + tax;
+        if (activeRetainerProjects.length > 0) {
+          const taxRate = Number(financials.taxRate) || 13;
 
-        // Auto-generate invoice number based on timestamp and client name snippet
-        const shortName = client.businessName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
-        const invoiceNum = `REC-${shortName}-${Date.now().toString().slice(-6)}`;
-        
-        // Setup invoice due date (e.g. 14 days from issue date)
-        const due = new Date();
-        due.setDate(due.getDate() + 14);
-        const dueStr = due.toISOString().split("T")[0];
+          for (const project of activeRetainerProjects) {
+            const amount = Number(project.value) || 0;
+            if (amount <= 0) continue;
 
-        // Create new invoice doc reference
-        const invoiceRef = adminDb.collection("invoices").doc();
-        batch.set(invoiceRef, {
-          invoiceNumber: invoiceNum,
-          clientId: clientId,
-          projectId: "",
-          invoiceDate: todayStr,
-          dueDate: dueStr,
-          amount,
-          tax,
-          total,
-          amountPaid: 0,
-          balance: total,
-          status: "Due",
-          paymentMethod: financials.paymentMethod || "Credit Card",
-          receiptUrl: "",
-          notes: "Auto-generated recurring retainer invoice by system cron scheduler.",
-          craNumber: "777790411",
-          hstNumber: "777790411 RT 0001",
-          fromCompanyName: "14689941 Canada Inc.",
-          fromBrandName: "Operating as Monk Media",
-          fromEmail: "info@monkmedia.ca",
-        });
+            const tax = Number(((amount * taxRate) / 100).toFixed(2));
+            const total = amount + tax;
 
-        // Calculate next billing date based on frequency
-        const nextDate = new Date();
-        if (financials.paymentFrequency === "Weekly") {
-          nextDate.setDate(nextDate.getDate() + 7);
-        } else if (financials.paymentFrequency === "Bi-Weekly") {
-          nextDate.setDate(nextDate.getDate() + 14);
-        } else {
-          // Default: Monthly
-          nextDate.setMonth(nextDate.getMonth() + 1);
+            // Auto-generate invoice number based on timestamp, client shortName, and project shortName
+            const shortName = client.businessName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+            const cleanProjName = project.name.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+            const invoiceNum = `REC-${shortName}-${cleanProjName}-${Date.now().toString().slice(-4)}`;
+
+            // Setup invoice due date (e.g. 14 days from issue date)
+            const due = new Date();
+            due.setDate(due.getDate() + 14);
+            const dueStr = due.toISOString().split("T")[0];
+
+            // Create new invoice doc reference
+            const invoiceRef = adminDb.collection("invoices").doc();
+            batch.set(invoiceRef, {
+              invoiceNumber: invoiceNum,
+              clientId: clientId,
+              projectId: project.id,
+              invoiceDate: todayStr,
+              dueDate: dueStr,
+              amount,
+              tax,
+              total,
+              amountPaid: 0,
+              balance: total,
+              status: "Due",
+              paymentMethod: financials.paymentMethod || "Credit Card",
+              receiptUrl: "",
+              notes: `Auto-generated recurring retainer invoice for project: "${project.name}" by system cron scheduler.`,
+              description: `Project Campaign Retainer: ${project.name}`,
+              craNumber: "777790411",
+              hstNumber: "777790411 RT 0001",
+              fromCompanyName: "14689941 Canada Inc.",
+              fromBrandName: "Operating as Monk Media",
+              fromEmail: "info@monkmedia.ca",
+            });
+
+            // Rollover project dates to next month
+            const shiftDate = (dateStr) => {
+              if (!dateStr) return "";
+              const d = new Date(dateStr + "T12:00:00");
+              if (isNaN(d.getTime())) return dateStr;
+              d.setMonth(d.getMonth() + 1);
+              return d.toISOString().split("T")[0];
+            };
+            const nextStart = shiftDate(project.startDate || todayStr);
+            const nextEnd = shiftDate(project.endDate || project.deadline);
+
+            const projectRef = adminDb.collection("projects").doc(project.id);
+            batch.update(projectRef, {
+              startDate: nextStart,
+              endDate: nextEnd,
+              deadline: nextEnd
+            });
+
+            invoicesGenerated++;
+          }
+
+          // Calculate next billing date based on frequency
+          const nextDate = new Date();
+          if (financials.paymentFrequency === "Weekly") {
+            nextDate.setDate(nextDate.getDate() + 7);
+          } else if (financials.paymentFrequency === "Bi-Weekly") {
+            nextDate.setDate(nextDate.getDate() + 14);
+          } else {
+            // Default: Monthly
+            nextDate.setMonth(nextDate.getMonth() + 1);
+          }
+          
+          const nextDateStr = nextDate.toISOString().split("T")[0];
+
+          // Update client document next/last payment logs
+          const clientRef = adminDb.collection("clients").doc(clientId);
+          batch.update(clientRef, {
+            "financials.nextPaymentDate": nextDateStr,
+            "financials.lastPaymentDate": todayStr,
+          });
         }
-        
-        const nextDateStr = nextDate.toISOString().split("T")[0];
-
-        // Update client document next/last payment logs
-        const clientRef = adminDb.collection("clients").doc(clientId);
-        batch.update(clientRef, {
-          "financials.nextPaymentDate": nextDateStr,
-          "financials.lastPaymentDate": todayStr,
-        });
-
-        invoicesGenerated++;
       }
     }
 

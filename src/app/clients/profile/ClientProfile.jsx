@@ -86,6 +86,7 @@ export default function ClientProfilePage() {
   const [newProjEndDate, setNewProjEndDate] = useState("");
   const [newProjInvoiceDueDate, setNewProjInvoiceDueDate] = useState("");
   const [newProjValue, setNewProjValue] = useState("");
+  const [newProjBillingType, setNewProjBillingType] = useState("One-Time");
 
   // Edit Project Form States
   const [editProjOpen, setEditProjOpen] = useState(false);
@@ -101,6 +102,7 @@ export default function ClientProfilePage() {
   const [editProjManager, setEditProjManager] = useState("");
   const [editProjDescription, setEditProjDescription] = useState("");
   const [editProjNotes, setEditProjNotes] = useState("");
+  const [editProjBillingType, setEditProjBillingType] = useState("One-Time");
 
   // Project Billing Form State
   const [billProjOpen, setBillProjOpen] = useState(false);
@@ -540,6 +542,7 @@ export default function ClientProfilePage() {
         deadline: newProjEndDate || "",
         completionDate: "",
         value: Number(newProjValue) || 0,
+        billingType: newProjBillingType || "One-Time",
         estimatedCost: 0,
         actualCost: 0,
         profit: 0,
@@ -608,6 +611,7 @@ export default function ClientProfilePage() {
       setNewProjEndDate("");
       setNewProjInvoiceDueDate("");
       setNewProjValue("");
+      setNewProjBillingType("One-Time");
       alert("Project created successfully!");
     } catch (err) {
       alert("Error adding project: " + err.message);
@@ -627,6 +631,7 @@ export default function ClientProfilePage() {
     setEditProjManager(project.projectManager || "");
     setEditProjDescription(project.description || "");
     setEditProjNotes(project.notes || "");
+    setEditProjBillingType(project.billingType || "One-Time");
     setEditProjOpen(true);
   };
 
@@ -642,6 +647,7 @@ export default function ClientProfilePage() {
         endDate: editProjEndDate || "",
         deadline: editProjEndDate || "",
         value: Number(editProjValue) || 0,
+        billingType: editProjBillingType || "One-Time",
         status: editProjStatus,
         progressPercent: Number(editProjProgress) || 0,
         driveFolder: editProjDriveFolder || "",
@@ -719,6 +725,25 @@ export default function ClientProfilePage() {
       };
 
       await addDoc(collection(db, "invoices"), payload);
+
+      // Auto-rollover retainer dates on billing
+      if (billProject.billingType === "Retainer") {
+        const shiftDate = (dateStr) => {
+          if (!dateStr) return "";
+          const d = new Date(dateStr + "T12:00:00");
+          if (isNaN(d.getTime())) return dateStr;
+          d.setMonth(d.getMonth() + 1);
+          return d.toISOString().split("T")[0];
+        };
+        const nextStart = shiftDate(billProject.startDate || new Date().toISOString().split("T")[0]);
+        const nextEnd = shiftDate(billProject.endDate || billProject.deadline);
+        await updateDoc(doc(db, "projects", billProject.id), {
+          startDate: nextStart,
+          endDate: nextEnd,
+          deadline: nextEnd
+        });
+      }
+
       setBillProjOpen(false);
       setBillProject(null);
       setBillInvDescription("Software and App Development");
@@ -732,6 +757,38 @@ export default function ClientProfilePage() {
       setBillFromEmail("info@monkmedia.ca");
     } catch (err) {
       alert("Error invoicing project: " + err.message);
+    }
+  };
+
+  const handleRolloverProject = async (project) => {
+    try {
+      const shiftDate = (dateStr) => {
+        if (!dateStr) return "";
+        const d = new Date(dateStr + "T12:00:00");
+        if (isNaN(d.getTime())) return dateStr;
+        d.setMonth(d.getMonth() + 1);
+        return d.toISOString().split("T")[0];
+      };
+      const nextStart = shiftDate(project.startDate || new Date().toISOString().split("T")[0]);
+      const nextEnd = shiftDate(project.endDate || project.deadline);
+      await updateDoc(doc(db, "projects", project.id), {
+        startDate: nextStart,
+        endDate: nextEnd,
+        deadline: nextEnd
+      });
+      alert(`Project "${project.name}" rolled over to next month (${nextStart} to ${nextEnd})`);
+    } catch (err) {
+      alert("Error rolling over project: " + err.message);
+    }
+  };
+
+  const handleDeleteProject = async (projectId) => {
+    if (!confirm("Are you sure you want to delete this project? This will not delete its invoices or payments.")) return;
+    try {
+      await deleteDoc(doc(db, "projects", projectId));
+      alert("Project deleted successfully.");
+    } catch (err) {
+      alert("Error deleting project: " + err.message);
     }
   };
 
@@ -1552,6 +1609,17 @@ export default function ClientProfilePage() {
                       />
                     </div>
                     <div>
+                      <label className="block text-sky-500 mb-1">Billing Model</label>
+                      <select
+                        value={newProjBillingType}
+                        onChange={(e) => setNewProjBillingType(e.target.value)}
+                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 font-semibold"
+                      >
+                        <option value="One-Time">One-Time Project</option>
+                        <option value="Retainer">Monthly Retainer</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-sky-500 mb-1">Start Date</label>
                       <input
                         type="date"
@@ -1586,7 +1654,7 @@ export default function ClientProfilePage() {
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
                     </div>
-                    <div className="sm:col-span-3 flex items-end justify-end">
+                    <div className="sm:col-span-4 flex items-end justify-end">
                       <button
                         type="submit"
                         className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition-all shadow"
@@ -1662,6 +1730,24 @@ export default function ClientProfilePage() {
                                 >
                                   Edit
                                 </button>
+                                {p.billingType === "Retainer" && (
+                                  <button
+                                    onClick={() => handleRolloverProject(p)}
+                                    className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-100 rounded-xl text-[10px] font-bold transition-all"
+                                    title="Rollover Retainer to Next Month"
+                                  >
+                                    Rollover
+                                  </button>
+                                )}
+                                {role === "admin" && (
+                                  <button
+                                    onClick={() => handleDeleteProject(p.id)}
+                                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-500 border border-red-100 rounded-xl text-[10px] font-bold transition-all"
+                                    title="Delete Project"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
                               </div>
                             )}
                           </td>
@@ -1732,6 +1818,19 @@ export default function ClientProfilePage() {
                               placeholder="e.g. 5000"
                               className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none"
                             />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                              Billing Model
+                            </label>
+                            <select
+                              value={editProjBillingType}
+                              onChange={(e) => setEditProjBillingType(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none text-sky-600 font-semibold"
+                            >
+                              <option value="One-Time">One-Time Project</option>
+                              <option value="Retainer">Monthly Retainer</option>
+                            </select>
                           </div>
                            <div>
                              <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">

@@ -301,6 +301,25 @@ export default function ProjectsPage() {
       };
 
       await addDoc(collection(db, "invoices"), payload);
+
+      // Auto-rollover retainer dates on billing
+      if (billProject.billingType === "Retainer") {
+        const shiftDate = (dateStr) => {
+          if (!dateStr) return "";
+          const d = new Date(dateStr + "T12:00:00");
+          if (isNaN(d.getTime())) return dateStr;
+          d.setMonth(d.getMonth() + 1);
+          return d.toISOString().split("T")[0];
+        };
+        const nextStart = shiftDate(billProject.startDate || new Date().toISOString().split("T")[0]);
+        const nextEnd = shiftDate(billProject.endDate || billProject.deadline);
+        await updateDoc(doc(db, "projects", billProject.id), {
+          startDate: nextStart,
+          endDate: nextEnd,
+          deadline: nextEnd
+        });
+      }
+
       setBillProjOpen(false);
       setBillProject(null);
       setBillInvDescription("Software and App Development");
@@ -314,6 +333,28 @@ export default function ProjectsPage() {
       setBillFromEmail("info@monkmedia.ca");
     } catch (err) {
       alert("Error invoicing project: " + err.message);
+    }
+  };
+
+  const handleRolloverProject = async (project) => {
+    try {
+      const shiftDate = (dateStr) => {
+        if (!dateStr) return "";
+        const d = new Date(dateStr + "T12:00:00");
+        if (isNaN(d.getTime())) return dateStr;
+        d.setMonth(d.getMonth() + 1);
+        return d.toISOString().split("T")[0];
+      };
+      const nextStart = shiftDate(project.startDate || new Date().toISOString().split("T")[0]);
+      const nextEnd = shiftDate(project.endDate || project.deadline);
+      await updateDoc(doc(db, "projects", project.id), {
+        startDate: nextStart,
+        endDate: nextEnd,
+        deadline: nextEnd
+      });
+      alert(`Project "${project.name}" rolled over to next month (${nextStart} to ${nextEnd})`);
+    } catch (err) {
+      alert("Error rolling over project: " + err.message);
     }
   };
 
@@ -488,66 +529,32 @@ export default function ProjectsPage() {
         const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
         const total = projectVal + tax;
 
-        // Check for existing invoice of this client to aggregate instead of adding new invoice row
-        const existingInvoicesQuery = query(
-          collection(db, "invoices"),
-          where("clientId", "==", projClientId)
-        );
-        const existingInvoicesSnap = await getDocs(existingInvoicesQuery);
-
-        if (existingInvoicesSnap.docs.length > 0) {
-          const existingInvDoc = existingInvoicesSnap.docs[0];
-          const invData = existingInvDoc.data();
-          const oldAmount = Number(invData.amount) || 0;
-          const newAmount = oldAmount + projectVal;
-          const clientTaxRate = parentClient?.financials?.taxRate ?? 0;
-          const newTax = Number(((newAmount * clientTaxRate) / 100).toFixed(2));
-          const newTotal = newAmount + newTax;
-
-          const diffTax = Number(((projectVal * clientTaxRate) / 100).toFixed(2));
-          const diffTotal = projectVal + diffTax;
-          const oldBalance = Number(invData.balance) || 0;
-          const newBalance = oldBalance + diffTotal;
-
-          const oldCampaignValue = Number(invData.campaignValue) || 0;
-          const newCampaignValue = oldCampaignValue + projectVal;
-
-          await updateDoc(doc(db, "invoices", existingInvDoc.id), {
-            amount: newAmount,
-            tax: newTax,
-            total: newTotal,
-            balance: newBalance,
-            campaignValue: newCampaignValue,
-            notes: `${invData.notes || ""}\nAdded project campaign "${projName}" with value $${projectVal.toLocaleString()}.`
-          });
-        } else {
-          await addDoc(collection(db, "invoices"), {
-            invoiceNumber: invoiceNum,
-            clientId: projClientId,
-            projectId: projRef.id,
-            invoiceDate: projStart,
-            dueDate: dueStr,
-            amount: projectVal,
-            campaignValue: projectVal,
-            tax,
-            total,
-            amountPaid: 0,
-            balance: total,
-            status: "Due",
-            paymentMethod: parentClient?.financials?.paymentMethod || "Credit Card",
-            receiptUrl: "",
-            notes: `Automatically generated invoice for project campaign "${projName}".`,
-            description: `Project Campaign: ${projName}`,
-            clientName,
-            clientAttention,
-            clientEmail,
-            craNumber: "777790411",
-            hstNumber: "777790411 RT 0001",
-            fromCompanyName: "14689941 Canada Inc.",
-            fromBrandName: "Operating as Monk Media",
-            fromEmail: "info@monkmedia.ca",
-          });
-        }
+        await addDoc(collection(db, "invoices"), {
+          invoiceNumber: invoiceNum,
+          clientId: projClientId,
+          projectId: projRef.id,
+          invoiceDate: projStart,
+          dueDate: dueStr,
+          amount: projectVal,
+          campaignValue: projectVal,
+          tax,
+          total,
+          amountPaid: 0,
+          balance: total,
+          status: "Due",
+          paymentMethod: parentClient?.financials?.paymentMethod || "Credit Card",
+          receiptUrl: "",
+          notes: `Automatically generated invoice for project campaign "${projName}".`,
+          description: `Project Campaign: ${projName}`,
+          clientName,
+          clientAttention,
+          clientEmail,
+          craNumber: "777790411",
+          hstNumber: "777790411 RT 0001",
+          fromCompanyName: "14689941 Canada Inc.",
+          fromBrandName: "Operating as Monk Media",
+          fromEmail: "info@monkmedia.ca",
+        });
       }
       
       // Reset Form
@@ -731,6 +738,15 @@ export default function ProjectsPage() {
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
+                              {p.billingType === "Retainer" && (
+                                <button
+                                  onClick={() => handleRolloverProject(p)}
+                                  className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-100 rounded-xl text-[10px] font-bold transition-all"
+                                  title="Transfer Retainer to Next Month"
+                                >
+                                  Rollover
+                                </button>
+                              )}
                             </>
                           )}
                           {role === "admin" && (
@@ -860,6 +876,15 @@ export default function ProjectsPage() {
                                   >
                                     <Pencil className="w-3 h-3" />
                                   </button>
+                                  {p.billingType === "Retainer" && (
+                                    <button
+                                      onClick={() => handleRolloverProject(p)}
+                                      className="text-[8px] font-bold px-1.5 py-0.5 rounded-md bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-100 uppercase transition-all"
+                                      title="Transfer Retainer to Next Month"
+                                    >
+                                      Rollover
+                                    </button>
+                                  )}
                                 </>
                               )}
                               {role === "admin" && (
