@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, doc, updateDoc, addDoc, getDocs, deleteDoc, query, where, getDoc } from "firebase/firestore";
 import { FolderKanban, List, Search, Plus, Filter, ArrowRight, X, Trash2, Pencil, Calendar, DollarSign, CheckCircle2, Activity } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function ProjectsPage() {
   const { currentUser, role } = useAuth();
@@ -268,7 +269,7 @@ export default function ProjectsPage() {
     try {
       const amount = Number(billInvAmount);
       const parentClient = clients.find((c) => c.id === billProject.clientId);
-      const taxRate = billIncludeHST ? (parentClient?.financials?.taxRate || 13) : 0;
+      const taxRate = billIncludeHST ? (parentClient?.financials?.taxRate ?? 13) : 0;
       const tax = Number(((amount * taxRate) / 100).toFixed(2));
       const total = amount + tax;
 
@@ -482,35 +483,70 @@ export default function ProjectsPage() {
 
         const projStart = projStartDate || new Date().toISOString().split("T")[0];
         const dueStr = addDays(projStart, 14);
-        const taxRate = parentClient?.financials?.taxRate || 13;
+        const taxRate = parentClient?.financials?.taxRate ?? 13;
         const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
         const total = projectVal + tax;
 
-        await addDoc(collection(db, "invoices"), {
-          invoiceNumber: invoiceNum,
-          clientId: projClientId,
-          projectId: projRef.id,
-          invoiceDate: projStart,
-          dueDate: dueStr,
-          amount: projectVal,
-          tax,
-          total,
-          amountPaid: 0,
-          balance: total,
-          status: "Due",
-          paymentMethod: parentClient?.financials?.paymentMethod || "Credit Card",
-          receiptUrl: "",
-          notes: `Automatically generated invoice for project campaign "${projName}".`,
-          description: `Project Campaign: ${projName}`,
-          clientName,
-          clientAttention,
-          clientEmail,
-          craNumber: "777790411",
-          hstNumber: "777790411 RT 0001",
-          fromCompanyName: "14689941 Canada Inc.",
-          fromBrandName: "Operating as Monk Media",
-          fromEmail: "info@monkmedia.ca",
-        });
+        // Check for existing invoice of this client to aggregate instead of adding new invoice row
+        const existingInvoicesQuery = query(
+          collection(db, "invoices"),
+          where("clientId", "==", projClientId)
+        );
+        const existingInvoicesSnap = await getDocs(existingInvoicesQuery);
+
+        if (existingInvoicesSnap.docs.length > 0) {
+          const existingInvDoc = existingInvoicesSnap.docs[0];
+          const invData = existingInvDoc.data();
+          const oldAmount = Number(invData.amount) || 0;
+          const newAmount = oldAmount + projectVal;
+          const clientTaxRate = parentClient?.financials?.taxRate ?? 13;
+          const newTax = Number(((newAmount * clientTaxRate) / 100).toFixed(2));
+          const newTotal = newAmount + newTax;
+
+          const diffTax = Number(((projectVal * clientTaxRate) / 100).toFixed(2));
+          const diffTotal = projectVal + diffTax;
+          const oldBalance = Number(invData.balance) || 0;
+          const newBalance = oldBalance + diffTotal;
+
+          const oldCampaignValue = Number(invData.campaignValue) || 0;
+          const newCampaignValue = oldCampaignValue + projectVal;
+
+          await updateDoc(doc(db, "invoices", existingInvDoc.id), {
+            amount: newAmount,
+            tax: newTax,
+            total: newTotal,
+            balance: newBalance,
+            campaignValue: newCampaignValue,
+            notes: `${invData.notes || ""}\nAdded project campaign "${projName}" with value $${projectVal.toLocaleString()}.`
+          });
+        } else {
+          await addDoc(collection(db, "invoices"), {
+            invoiceNumber: invoiceNum,
+            clientId: projClientId,
+            projectId: projRef.id,
+            invoiceDate: projStart,
+            dueDate: dueStr,
+            amount: projectVal,
+            campaignValue: projectVal,
+            tax,
+            total,
+            amountPaid: 0,
+            balance: total,
+            status: "Due",
+            paymentMethod: parentClient?.financials?.paymentMethod || "Credit Card",
+            receiptUrl: "",
+            notes: `Automatically generated invoice for project campaign "${projName}".`,
+            description: `Project Campaign: ${projName}`,
+            clientName,
+            clientAttention,
+            clientEmail,
+            craNumber: "777790411",
+            hstNumber: "777790411 RT 0001",
+            fromCompanyName: "14689941 Canada Inc.",
+            fromBrandName: "Operating as Monk Media",
+            fromEmail: "info@monkmedia.ca",
+          });
+        }
       }
       
       // Reset Form
@@ -607,11 +643,8 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        {/* LOADING CHECK */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          </div>
+          <Loader />
         ) : filteredProjects.length === 0 ? (
           <div className="text-center py-20 border border-sky-100 rounded-3xl bg-sky-50/5">
             <FolderKanban className="w-12 h-12 mx-auto text-sky-200 mb-2" />

@@ -26,6 +26,8 @@ import {
   Trash2
 } from "lucide-react";
 
+import Loader from "@/components/Loader";
+
 export default function TasksPage() {
   const { currentUser, role } = useAuth();
   
@@ -426,11 +428,8 @@ export default function TasksPage() {
 
         </div>
 
-        {/* LOADING SCREEN */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          </div>
+          <Loader />
         ) : filteredTasks.length === 0 ? (
           <div className="text-center py-20 border border-sky-100 rounded-3xl bg-sky-50/5">
             <CheckSquare className="w-12 h-12 mx-auto text-sky-200 mb-2" />

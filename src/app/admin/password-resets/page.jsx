@@ -6,6 +6,7 @@ import { auth, db } from "@/lib/firebase";
 import { collection, onSnapshot, doc, deleteDoc, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { KeyRound, ShieldAlert, Check, Copy, Trash2, Clock, Mail, Shield, RefreshCw } from "lucide-react";
+import Loader from "@/components/Loader";
 
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
@@ -175,11 +176,7 @@ Please log in and update your password.`;
 
   // Authentication guards
   if (authLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-8 bg-white min-h-[500px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-      </div>
-    );
+    return <Loader fullPage={true} message="Checking admin credentials..." />;
   }
 
   if (role !== "admin") {

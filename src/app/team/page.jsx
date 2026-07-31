@@ -6,6 +6,7 @@ import { db, storage } from "@/lib/firebase";
 import { collection, onSnapshot, query, where, addDoc, doc, deleteDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Users, User, Phone, DollarSign, Upload, FileDown, CheckCircle, Clock, Trash2 } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function TeamPage() {
   const { currentUser, role } = useAuth();
@@ -138,9 +139,7 @@ export default function TeamPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          </div>
+          <Loader />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             

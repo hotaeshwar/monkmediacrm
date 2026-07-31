@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import Link from "next/link";
 import { Search, Plus, User, Filter, RefreshCw, X, Trash2 } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function ClientsPage() {
   const { currentUser, role } = useAuth();
@@ -25,7 +26,6 @@ export default function ClientsPage() {
   const [phone, setPhone] = useState("");
   const [industry, setIndustry] = useState("");
   const [assignedManager, setAssignedManager] = useState("");
-  const [monthlyRetainer, setMonthlyRetainer] = useState("");
   const [clientStatus, setClientStatus] = useState("Active");
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
@@ -39,11 +39,23 @@ export default function ClientsPage() {
   const [initialProjManager, setInitialProjManager] = useState("");
   
   // New optional fields
-  const [retainerStartDate, setRetainerStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [projectStartDate, setProjectStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [clientNotes, setClientNotes] = useState("");
   const [initialProjName, setInitialProjName] = useState("");
   const [initialProjDescription, setInitialProjDescription] = useState("");
   const [driveLinks, setDriveLinks] = useState([]); // Array of { title: "", url: "" }
+  const [includeHST, setIncludeHST] = useState(true);
+  const [projects, setProjects] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  const getClientCampaignValue = (clientId) => {
+    return projects
+      .filter((p) => p.clientId === clientId && p.status !== "Cancelled")
+      .reduce((sum, p) => sum + (Number(p.value) || 0), 0);
+  };
 
   const handleDeleteClient = async (clientId) => {
     if (!confirm("Are you sure you want to delete this client? This will delete their profile from the registry.")) {
@@ -81,6 +93,14 @@ export default function ClientsPage() {
         }
       });
       setManagers(managerList);
+
+      // 3. Fetch Projects
+      const projectSnap = await getDocs(collection(db, "projects"));
+      const projectList = [];
+      projectSnap.forEach((doc) => {
+        projectList.push({ id: doc.id, ...doc.data() });
+      });
+      setProjects(projectList);
     } catch (err) {
       console.error("Error loading clients module:", err);
     } finally {
@@ -113,7 +133,10 @@ export default function ClientsPage() {
     // 3. Status filtering
     const matchStatus = statusFilter === "All" || c.status === statusFilter;
 
-    return matchSearch && matchStatus;
+    // 4. Date filtering
+    const matchMonth = !selectedMonth || (c.dateJoined && c.dateJoined.startsWith(selectedMonth));
+
+    return matchSearch && matchStatus && matchMonth;
   });
 
   const handleCreateClient = async (e) => {
@@ -130,7 +153,7 @@ export default function ClientsPage() {
           url: link.url.trim(),
         }));
 
-      const onboardingDate = retainerStartDate || new Date().toISOString().split("T")[0];
+      const onboardingDate = projectStartDate || new Date().toISOString().split("T")[0];
       const start = new Date(onboardingDate + "T12:00:00");
       const nextMonth = new Date(start.getFullYear(), start.getMonth() + 1, start.getDate());
       const nextPaymentDateStr = nextMonth.toISOString().split("T")[0];
@@ -161,13 +184,14 @@ export default function ClientsPage() {
         accountLinks: validLinks,
         assignedTeam: [],
         financials: {
-          monthlyRetainer: Number(monthlyRetainer) || 0,
+          monthlyRetainer: 0,
           oneTimeProjectValue: 0,
           paymentFrequency: "Monthly",
           dueDate: dueDateStr,
+          projectStartDate: onboardingDate,
           contractStart: onboardingDate,
           contractEnd: "",
-          taxRate: 13,
+          taxRate: includeHST ? 13 : 0,
           gstNumber: "",
           billingEmail: email || "",
           paymentMethod: "Credit Card",
@@ -189,41 +213,7 @@ export default function ClientsPage() {
         return d.toISOString().split("T")[0];
       };
 
-      // Auto-create retainer invoice if monthly retainer is set
-      const retainerVal = Number(monthlyRetainer) || 0;
-      if (retainerVal > 0) {
-        const cleanName = finalBusinessName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
-        const invoiceNum = `INV-${cleanName}-${Date.now().toString().slice(-6)}`;
-        const dueStr = addDays(onboardingDate, 14);
-        const tax = Number(((retainerVal * 13) / 100).toFixed(2));
-        const total = retainerVal + tax;
-
-        await addDoc(collection(db, "invoices"), {
-          invoiceNumber: invoiceNum,
-          clientId: docRef.id,
-          projectId: "",
-          invoiceDate: onboardingDate,
-          dueDate: dueStr,
-          amount: retainerVal,
-          tax,
-          total,
-          amountPaid: 0,
-          balance: total,
-          status: "Due",
-          paymentMethod: "Credit Card",
-          receiptUrl: "",
-          notes: "Automatically generated invoice for client onboarding monthly retainer.",
-          description: "Monthly Retainer Billing",
-          clientName: finalBusinessName,
-          clientAttention: contactPerson || "",
-          clientEmail: email || "",
-          craNumber: "777790411",
-          hstNumber: "777790411 RT 0001",
-          fromCompanyName: "14689941 Canada Inc.",
-          fromBrandName: "Operating as Monk Media",
-          fromEmail: "info@monkmedia.ca",
-        });
-      }
+      // Auto-create retainer invoice if monthly retainer is set (Removed as monthly retainer is not set at registration)
 
       // Create an initial project if specified
       if (initialProjName.trim()) {
@@ -258,7 +248,8 @@ export default function ClientsPage() {
           const invoiceNum = `INV-${cleanProjName}-${Date.now().toString().slice(-6)}`;
           const projStart = initialProjStartDate || onboardingDate;
           const dueStr = addDays(projStart, 14);
-          const tax = Number(((projectVal * 13) / 100).toFixed(2));
+          const clientTaxRate = includeHST ? 13 : 0;
+          const tax = Number(((projectVal * clientTaxRate) / 100).toFixed(2));
           const total = projectVal + tax;
 
           await addDoc(collection(db, "invoices"), {
@@ -268,6 +259,7 @@ export default function ClientsPage() {
             invoiceDate: projStart,
             dueDate: dueStr,
             amount: projectVal,
+            campaignValue: projectVal,
             tax,
             total,
             amountPaid: 0,
@@ -318,8 +310,7 @@ export default function ClientsPage() {
       setPhone("");
       setIndustry("");
       setAssignedManager("");
-      setMonthlyRetainer("");
-      setRetainerStartDate(new Date().toISOString().split("T")[0]);
+      setProjectStartDate(new Date().toISOString().split("T")[0]);
       setClientNotes("");
       setInitialProjName("");
       setInitialProjType("Social Media");
@@ -426,13 +417,20 @@ export default function ClientsPage() {
               <option value="Archived">Archived</option>
             </select>
           </div>
+          {/* Month Date Picker */}
+          <div className="relative min-w-[160px]">
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="w-full px-4 py-2.5 bg-white border border-sky-100 rounded-2xl text-sm text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300 font-semibold"
+            />
+          </div>
         </div>
 
         {/* Clients Table / List */}
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          </div>
+          <Loader />
         ) : filteredClients.length === 0 ? (
           <div className="text-center py-20 border border-sky-100 rounded-3xl bg-sky-50/5/30">
             <User className="w-12 h-12 mx-auto text-sky-200 mb-2" />
@@ -452,6 +450,7 @@ export default function ClientsPage() {
                     <th className="py-4 px-6">Industry</th>
                     <th className="py-4 px-6">Joined Date</th>
                     <th className="py-4 px-6">Retainer</th>
+                    <th className="py-4 px-6">Campaign Value</th>
                     <th className="py-4 px-6">Status</th>
                     <th className="py-4 px-6 text-right">Action</th>
                   </tr>
@@ -474,6 +473,9 @@ export default function ClientsPage() {
                         {(role === "admin" || role === "manager" || role === "client")
                           ? `$${(c.financials?.monthlyRetainer || 0).toLocaleString()}`
                           : "—"}
+                      </td>
+                      <td className="py-4.5 px-6 text-sky-600 font-semibold">
+                        {`$${getClientCampaignValue(c.id).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
                       </td>
                       <td className="py-4.5 px-6">
                         <select
@@ -599,31 +601,17 @@ export default function ClientsPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                        Industry
-                      </label>
-                      <input
-                        type="text"
-                        value={industry}
-                        onChange={(e) => setIndustry(e.target.value)}
-                        placeholder="e.g. Retail, Real Estate"
-                        className="w-full px-3 py-2 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                        Monthly Retainer ($)
-                      </label>
-                      <input
-                        type="number"
-                        value={monthlyRetainer}
-                        onChange={(e) => setMonthlyRetainer(e.target.value)}
-                        placeholder="e.g. 1500"
-                        className="w-full px-3 py-2 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-xs text-sky-600 outline-none transition-all duration-200"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Industry
+                    </label>
+                    <input
+                      type="text"
+                      value={industry}
+                      onChange={(e) => setIndustry(e.target.value)}
+                      placeholder="e.g. Retail, Real Estate"
+                      className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
+                    />
                   </div>
 
                   <div>
@@ -662,14 +650,27 @@ export default function ClientsPage() {
 
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                      Retainer Start Date
+                      Project Start Date
                     </label>
                     <input
                       type="date"
-                      value={retainerStartDate}
-                      onChange={(e) => setRetainerStartDate(e.target.value)}
+                      value={projectStartDate}
+                      onChange={(e) => setProjectStartDate(e.target.value)}
                       className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
                     />
+                  </div>
+
+                  <div className="flex items-center gap-2 py-1.5">
+                    <input
+                      type="checkbox"
+                      id="includeHST"
+                      checked={includeHST}
+                      onChange={(e) => setIncludeHST(e.target.checked)}
+                      className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
+                    />
+                    <label htmlFor="includeHST" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
+                      Opt-in / Include HST (13%) Tax Rate
+                    </label>
                   </div>
 
                   <div>

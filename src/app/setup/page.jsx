@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, ShieldAlert, Sparkles, UserCheck } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function SetupPage() {
   const [setupAvailable, setSetupAvailable] = useState(null);
@@ -58,14 +59,7 @@ export default function SetupPage() {
   };
 
   if (loading && setupAvailable === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white p-4">
-        <div className="flex flex-col items-center gap-2 text-sky-400">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          <span className="text-sm font-semibold">Checking system state...</span>
-        </div>
-      </div>
-    );
+    return <Loader fullPage={true} message="Checking system state..." />;
   }
 
   if (setupAvailable === false) {

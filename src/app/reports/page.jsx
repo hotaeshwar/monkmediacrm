@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { ShieldAlert, FileText, Download, Printer, Filter, Calendar, TrendingDown, Sparkles } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function ReportsPage() {
   const { currentUser, role } = useAuth();
@@ -527,8 +528,8 @@ export default function ReportsPage() {
 
         {/* LOADING INDICATOR */}
         {loading ? (
-          <div className="flex items-center justify-center py-20 print:hidden">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+          <div className="print:hidden">
+            <Loader />
           </div>
         ) : (
           <div className="space-y-8">

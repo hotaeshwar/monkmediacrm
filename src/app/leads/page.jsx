@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, doc, updateDoc, addDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { BarChart3, Plus, Search, Filter, ArrowRight, Check, X, Trash2, User, Info, Calendar } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function LeadsPage() {
   const { currentUser, role } = useAuth();
@@ -199,6 +200,7 @@ export default function LeadsPage() {
             oneTimeProjectValue: 0,
             paymentFrequency: "Monthly",
             dueDate: dueDateStr,
+            projectStartDate: onboardingDate,
             contractStart: onboardingDate,
             contractEnd: "",
             taxRate: 13,
@@ -287,9 +289,7 @@ export default function LeadsPage() {
 
         {/* KANBAN BOARD */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          </div>
+          <Loader />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
             {stages.map((stage) => {

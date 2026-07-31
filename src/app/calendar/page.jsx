@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, doc, getDoc } from "firebase/firestore";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, MapPin, Video, User, X, Settings } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function CalendarPage() {
   const { currentUser, role } = useAuth();
@@ -198,9 +199,7 @@ export default function CalendarPage() {
 
         {/* CALENDAR BODY */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          </div>
+          <Loader />
         ) : (
           <div className="bg-white border border-sky-100 rounded-3xl shadow-xl p-4 sm:p-6 space-y-4">
             

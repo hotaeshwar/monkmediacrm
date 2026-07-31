@@ -4,7 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, getDoc } from "firebase/firestore";
-import { ShieldAlert, TrendingUp, TrendingDown, DollarSign, Plus, Check, FileText, FileMinus, X, Printer, Download, Trash2, Edit2 } from "lucide-react";
+import { ShieldAlert, TrendingUp, TrendingDown, DollarSign, Plus, Check, FileText, FileMinus, X, Printer, Download, Trash2, Edit2, AlertTriangle } from "lucide-react";
+import Loader from "@/components/Loader";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 
 export default function FinancePage() {
@@ -17,6 +18,11 @@ export default function FinancePage() {
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   // Tab State
   const [activeTab, setActiveTab] = useState("invoices"); // invoices, expenses, payments, profit
@@ -181,6 +187,12 @@ export default function FinancePage() {
       setPayments(list);
     });
 
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+      const list = [];
+      snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      setUsers(list);
+    });
+
     setLoading(false);
 
     return () => {
@@ -189,13 +201,16 @@ export default function FinancePage() {
       unsubInvoices();
       unsubExpenses();
       unsubPayments();
+      unsubUsers();
     };
   }, [currentUser, role]);
 
-  // Scoped Data Boundary for managers
+  const adminIds = users.filter(u => u.role === "admin").map(u => u.id);
+
+  // Scoped Data Boundary for managers (syncing admin-created clients)
   const scopedClients = clients.filter((c) => {
     if (role === "admin") return true;
-    return c.accountManager === currentUser?.uid;
+    return c.accountManager === currentUser?.uid || adminIds.includes(c.accountManager) || !c.accountManager;
   });
 
   const scopedInvoices = invoices.filter((inv) => {
@@ -215,16 +230,32 @@ export default function FinancePage() {
     return parentInv && scopedClients.some((c) => c.id === parentInv.clientId);
   });
 
+  const isRetainerInvoice = (inv) => {
+    if (!inv) return false;
+    if (inv.description && inv.description.toLowerCase().includes("retainer")) return true;
+    const client = clients.find(c => c.id === inv.clientId);
+    if (client && Number(client.financials?.monthlyRetainer) > 0) return true;
+    if (inv.projectId) {
+      const project = projects.find(p => p.id === inv.projectId);
+      if (project && project.billingType === "Retainer") return true;
+    }
+    return false;
+  };
+
   // Calculate Metrics
   const d = new Date();
   const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-  const totalBilling = scopedInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
-  const totalReceived = scopedInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
-  const totalOutstanding = scopedInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
-  const totalExpenses = scopedExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
+  // Filter scoped data by selectedMonth using startsWith
+  const filteredInvoices = scopedInvoices.filter((inv) => inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth));
+  const filteredExpenses = scopedExpenses.filter((exp) => exp.date && exp.date.startsWith(selectedMonth));
+
+  const totalBilling = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
+  const totalReceived = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
+  const totalOutstanding = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
+  const totalExpenses = filteredExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
   
-  const totalOverdue = scopedInvoices.reduce((acc, inv) => {
+  const totalOverdue = filteredInvoices.reduce((acc, inv) => {
     if (inv.status !== "Received" && inv.status !== "Paid" && inv.dueDate < todayStr) {
       return acc + (Number(inv.balance) || 0);
     }
@@ -232,6 +263,12 @@ export default function FinancePage() {
   }, 0);
 
   const netProfit = totalReceived - totalExpenses;
+
+  // Retainer-specific metrics for selectedMonth
+  const retainerInvoices = filteredInvoices.filter(inv => isRetainerInvoice(inv));
+  const retainerAdded = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
+  const retainerReceived = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
+  const retainerDue = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
 
   // Add actions
   const handleLogInvoice = async (e) => {
@@ -241,7 +278,7 @@ export default function FinancePage() {
     try {
       const amount = Number(invAmount);
       const parentClient = clients.find((c) => c.id === invClientId);
-      const taxRate = invIncludeHST ? (parentClient?.financials?.taxRate || 13) : 0;
+      const taxRate = invIncludeHST ? (parentClient?.financials?.taxRate ?? 13) : 0;
       const tax = Number(((amount * taxRate) / 100).toFixed(2));
       const total = amount + tax;
 
@@ -863,6 +900,22 @@ export default function FinancePage() {
           </div>
         </div>
 
+        {/* DATE SELECTOR BAR */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-sky-50/20 p-4 rounded-3xl border border-sky-100/50">
+          <div>
+            <h3 className="text-xs font-bold text-sky-500 uppercase tracking-wider">Select Financial Period</h3>
+            <p className="text-[10px] text-sky-400 font-semibold mt-0.5">Filter invoice and retainer calculations</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-4 py-2 border border-sky-100 rounded-2xl text-xs text-sky-600 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-300 bg-white"
+            />
+          </div>
+        </div>
+
         {/* FINANCIAL MARGINS SUMMARY CARD PANEL */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm">
@@ -895,6 +948,34 @@ export default function FinancePage() {
           </div>
         </div>
 
+        {/* RETAINER SUMMARY CARD PANEL */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest">Retainer Billing Summary ({selectedMonth})</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm">
+              <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Added</p>
+              <h3 className="text-2xl font-bold text-sky-600 mt-1">
+                ${retainerAdded.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+              </h3>
+              <p className="text-[10px] text-sky-400 mt-0.5 font-semibold">Total retainer invoices issued</p>
+            </div>
+            <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm">
+              <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Collected</p>
+              <h3 className="text-2xl font-bold text-sky-600 mt-1">
+                ${retainerReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+              </h3>
+              <p className="text-[10px] text-sky-400 mt-0.5 font-semibold">Payments processed successfully</p>
+            </div>
+            <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm">
+              <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Due</p>
+              <h3 className="text-2xl font-bold text-sky-600 mt-1">
+                ${retainerDue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+              </h3>
+              <p className="text-[10px] text-sky-400 mt-0.5 font-semibold">Unpaid balances for this period</p>
+            </div>
+          </div>
+        </div>
+
         {/* Tab selection */}
         <div className="border-b border-sky-100 overflow-x-auto flex gap-2">
           {[
@@ -920,9 +1001,7 @@ export default function FinancePage() {
 
         {/* Tab Content Display */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-          </div>
+          <Loader />
         ) : (
           <div className="bg-white rounded-3xl min-h-[300px]">
             
@@ -938,6 +1017,7 @@ export default function FinancePage() {
                       <th className="p-4 px-6">Due Date</th>
                       <th className="p-4 px-6 text-center">Status</th>
                       <th className="p-4 px-6 text-right">Total</th>
+                      <th className="p-4 px-6 text-right">Campaign Value</th>
                       <th className="p-4 px-6 text-right">Received</th>
                       <th className="p-4 px-6 text-right">Balance</th>
                       <th className="p-4 px-6 text-right">Action</th>
@@ -946,7 +1026,7 @@ export default function FinancePage() {
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
                     {scopedInvoices.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-sky-400 font-medium">
+                        <td colSpan={9} className="p-8 text-center text-sky-400 font-medium">
                           No logged invoices found.
                         </td>
                       </tr>
@@ -1002,6 +1082,11 @@ export default function FinancePage() {
                               </select>
                             </td>
                             <td className="p-4 px-6 text-right">${Number(inv.total || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td className="p-4 px-6 text-right text-sky-600 font-bold">
+                              {inv.campaignValue > 0
+                                ? `$${Number(inv.campaignValue).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                                : "—"}
+                            </td>
                             <td className="p-4 px-6 text-right">${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 px-6 text-right font-bold">${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 px-6 text-right flex items-center justify-end gap-2">

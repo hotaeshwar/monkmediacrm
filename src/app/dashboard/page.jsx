@@ -19,8 +19,10 @@ import {
   Layers,
   FileCheck,
   PhoneCall,
-  CalendarCheck
+  CalendarCheck,
+  FileText
 } from "lucide-react";
+import Loader from "@/components/Loader";
 import {
   AreaChart,
   Area,
@@ -71,6 +73,11 @@ export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [loading, setLoading] = useState(true);
 
   // Redirect if not logged in
@@ -92,9 +99,10 @@ export default function Dashboard() {
     let loadedLeads = role !== "admin" && role !== "manager";
     let loadedInvoices = role !== "admin" && role !== "manager";
     let loadedExpenses = role !== "admin" && role !== "manager";
+    let loadedUsers = false;
 
     const checkAllLoaded = () => {
-      if (loadedClients && loadedProjects && loadedTasks && loadedLeads && loadedInvoices && loadedExpenses) {
+      if (loadedClients && loadedProjects && loadedTasks && loadedLeads && loadedInvoices && loadedExpenses && loadedUsers) {
         setLoading(false);
       }
     };
@@ -132,6 +140,18 @@ export default function Dashboard() {
     }, (err) => {
       console.error("Tasks sync error:", err);
       loadedTasks = true;
+      checkAllLoaded();
+    });
+
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+      const list = [];
+      snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      setUsers(list);
+      loadedUsers = true;
+      checkAllLoaded();
+    }, (err) => {
+      console.error("Users sync error:", err);
+      loadedUsers = true;
       checkAllLoaded();
     });
 
@@ -184,16 +204,18 @@ export default function Dashboard() {
       unsubLeads();
       unsubInvoices();
       unsubExpenses();
+      unsubUsers();
     };
   }, [currentUser, role, authLoading]);
 
   // Calculate Metrics based on Role and Filter Scope
   const uid = currentUser?.uid;
+  const adminIds = users.filter((u) => u.role === "admin").map((u) => u.id);
 
-  // 1. Scoped Raw Datasets
+  // 1. Scoped Raw Datasets (syncing admin-created clients)
   const scopedClients = clients.filter((c) => {
     if (role === "admin") return true;
-    if (role === "manager") return c.accountManager === uid;
+    if (role === "manager") return c.accountManager === uid || adminIds.includes(c.accountManager) || !c.accountManager;
     // Team member: client.assignedTeam contains user uid, or assigned in client profile
     return c.assignedTeam?.includes(uid) || c.accountManager === uid;
   });
@@ -228,6 +250,18 @@ export default function Dashboard() {
     return false;
   });
 
+  const isRetainerInvoice = (inv) => {
+    if (!inv) return false;
+    if (inv.description && inv.description.toLowerCase().includes("retainer")) return true;
+    const client = clients.find(c => c.id === inv.clientId);
+    if (client && Number(client.financials?.monthlyRetainer) > 0) return true;
+    if (inv.projectId) {
+      const project = projects.find(p => p.id === inv.projectId);
+      if (project && project.billingType === "Retainer") return true;
+    }
+    return false;
+  };
+
   // 2. Metrics Calculations
   const dObj = new Date();
   const todayStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, "0")}-${String(dObj.getDate()).padStart(2, "0")}`;
@@ -236,15 +270,13 @@ export default function Dashboard() {
   
   const newClientsThisMonth = scopedClients.filter((c) => {
     if (!c.dateJoined) return false;
-    const joined = new Date(c.dateJoined);
-    const now = new Date();
-    return joined.getMonth() === now.getMonth() && joined.getFullYear() === now.getFullYear();
+    return c.dateJoined.startsWith(selectedMonth);
   }).length;
 
   const activeProjectsCount = scopedProjects.filter((p) => p.status !== "Cancelled").length;
 
   const tasksDueToday = scopedTasks.filter((t) => t.dueDate === todayStr && t.status !== "Completed").length;
-  
+   
   const overdueTasksCount = scopedTasks.filter((t) => {
     if (!t.dueDate || t.status === "Completed" || t.status === "Cancelled") return false;
     return t.dueDate < todayStr;
@@ -275,6 +307,11 @@ export default function Dashboard() {
   let monthlyExpenses = 0;
   let additionalInvoicesRevenue = 0;
 
+  // Retainer metrics
+  let retainerAdded = 0;
+  let retainerReceived = 0;
+  let retainerDue = 0;
+
   if (role === "admin" || role === "manager") {
     // MRR = Client-level monthly retainers + active project-level retainers
     const clientRetainersSum = scopedClients.reduce((acc, c) => {
@@ -293,55 +330,61 @@ export default function Dashboard() {
 
     mrr = clientRetainersSum + projectRetainersSum;
 
-    // Revenue received this month: Invoices paid this month
-    const now = new Date();
+    // Revenue received this month: Invoices paid in selectedMonth
     revenueReceivedThisMonth = scopedInvoices.reduce((acc, inv) => {
       if (inv.status !== "Paid" && inv.status !== "Received" && (Number(inv.amountPaid) || 0) <= 0) return acc;
-      const invDate = new Date(inv.invoiceDate || inv.dueDate);
-      if (invDate.getMonth() === now.getMonth() && invDate.getFullYear() === now.getFullYear()) {
+      const dateStr = inv.invoiceDate || inv.dueDate;
+      if (dateStr && dateStr.startsWith(selectedMonth)) {
         return acc + (Number(inv.amountPaid) || 0);
       }
       return acc;
     }, 0);
 
-    // Additional manual/project invoices created this month (excluding recurring ones)
+    // Additional manual/project invoices created in selectedMonth (excluding recurring ones)
     additionalInvoicesRevenue = scopedInvoices.reduce((acc, inv) => {
-      if (!inv.invoiceDate) return acc;
-      const invDate = new Date(inv.invoiceDate);
-      const isCurrentMonth = invDate.getMonth() === now.getMonth() && invDate.getFullYear() === now.getFullYear();
-      const isRecurring = String(inv.invoiceNumber || "").startsWith("REC-") || String(inv.notes || "").toLowerCase().includes("recurring");
-      
-      if (isCurrentMonth && !isRecurring) {
-        return acc + (Number(inv.amount) || 0);
+      if (inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth)) {
+        const isRecurring = String(inv.invoiceNumber || "").startsWith("REC-") || String(inv.notes || "").toLowerCase().includes("recurring");
+        if (!isRecurring) {
+          return acc + (Number(inv.amount) || 0);
+        }
       }
       return acc;
     }, 0);
 
-    // Outstanding payments
+    // Outstanding payments for selectedMonth
     outstandingPayments = scopedInvoices.reduce((acc, inv) => {
       const status = inv.status || "Due";
       if (status === "Paid" || status === "Received") return acc;
-      return acc + (Number(inv.balance) || 0);
-    }, 0);
-
-    // Overdue payments (Invoices where dueDate < today and status != Paid/Received)
-    overduePayments = scopedInvoices.reduce((acc, inv) => {
-      const status = inv.status || "Due";
-      if (status !== "Paid" && status !== "Received" && inv.dueDate < todayStr) {
+      if (inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth)) {
         return acc + (Number(inv.balance) || 0);
       }
       return acc;
     }, 0);
 
-    // Monthly expenses (expenses logged in current month)
+    // Overdue payments for selectedMonth
+    overduePayments = scopedInvoices.reduce((acc, inv) => {
+      const status = inv.status || "Due";
+      if (status !== "Paid" && status !== "Received" && inv.dueDate < todayStr) {
+        if (inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth)) {
+          return acc + (Number(inv.balance) || 0);
+        }
+      }
+      return acc;
+    }, 0);
+
+    // Monthly expenses (expenses logged in selectedMonth)
     monthlyExpenses = scopedExpenses.reduce((acc, exp) => {
-      if (!exp.date) return acc;
-      const expDate = new Date(exp.date);
-      if (expDate.getMonth() === now.getMonth() && expDate.getFullYear() === now.getFullYear()) {
+      if (exp.date && exp.date.startsWith(selectedMonth)) {
         return acc + (Number(exp.amount) || 0);
       }
       return acc;
     }, 0);
+
+    // Calculate retainer metrics for selectedMonth
+    const retainerInvoices = scopedInvoices.filter(inv => inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth) && isRetainerInvoice(inv));
+    retainerAdded = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
+    retainerReceived = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
+    retainerDue = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
   }
 
   const estimatedProfit = (role === "admin" || role === "manager")
@@ -404,11 +447,7 @@ export default function Dashboard() {
   ].filter(item => item.value > 0);
 
   if (authLoading || loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-8 bg-white min-h-[600px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-      </div>
-    );
+    return <Loader fullPage={true} message="Loading dashboard insights..." />;
   }
 
   return (
@@ -416,6 +455,22 @@ export default function Dashboard() {
       <DashboardHeader />
 
       <div className="p-6 space-y-8 max-w-7xl mx-auto w-full">
+
+        {/* DATE SELECTOR BAR */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-sky-50/20 p-4 rounded-3xl border border-sky-100/50">
+          <div>
+            <h3 className="text-xs font-bold text-sky-500 uppercase tracking-wider">Viewing Dashboard Period</h3>
+            <p className="text-[10px] text-sky-400 font-semibold mt-0.5">Filter clients, projects, tasks, and financials</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-4 py-2 border border-sky-100 rounded-2xl text-xs text-sky-600 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-300 bg-white"
+            />
+          </div>
+        </div>
         
         {/* METRIC CARDS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -543,6 +598,49 @@ export default function Dashboard() {
               </div>
 
             </div>
+
+            {/* Synced Retainer billing metrics row */}
+            <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest pt-2">
+              Retainer Billing Performance ({selectedMonth})
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              {/* Retainers Added Card */}
+              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Added</p>
+                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${retainerAdded.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Total retainer billing</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                  <FileText className="w-5 h-5" />
+                </div>
+              </div>
+              
+              {/* Retainers Collected Card */}
+              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Collected</p>
+                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${retainerReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Processed payments</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                  <CheckSquare className="w-5 h-5" />
+                </div>
+              </div>
+              
+              {/* Retainers Due Card */}
+              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Due</p>
+                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${retainerDue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Outstanding balance</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
           </div>
         )}
 

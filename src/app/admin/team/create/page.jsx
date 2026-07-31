@@ -6,6 +6,7 @@ import { auth, db } from "@/lib/firebase";
 import { collection, getDocs, addDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { KeyRound, ShieldAlert, UserCheck, Plus, Check, Copy, Key } from "lucide-react";
+import Loader from "@/components/Loader";
 
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -148,6 +149,7 @@ Please keep these credentials secure.`;
               oneTimeProjectValue: 0,
               paymentFrequency: "Monthly",
               dueDate: dueDateStr,
+              projectStartDate: onboardingDate,
               contractStart: onboardingDate,
               contractEnd: "",
               taxRate: 13,
@@ -239,11 +241,7 @@ Please keep these credentials secure.`;
 
   // Auth Protection guard
   if (authLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-8 bg-white min-h-[500px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-      </div>
-    );
+    return <Loader fullPage={true} message="Checking admin session..." />;
   }
 
   if (role !== "admin") {

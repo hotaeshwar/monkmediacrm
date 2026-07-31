@@ -39,6 +39,7 @@ import {
   Edit,
   KeyRound
 } from "lucide-react";
+import Loader from "@/components/Loader";
 
 export default function ClientProfilePage() {
   const searchParams = useSearchParams();
@@ -325,11 +326,7 @@ export default function ClientProfilePage() {
   }, [currentUser, role, authLoading, id]);
 
   if (authLoading || loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-8 bg-white min-h-[500px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
-      </div>
-    );
+    return <Loader fullPage={true} message="Loading client profile data..." />;
   }
 
   if (error) {
@@ -371,7 +368,7 @@ export default function ClientProfilePage() {
       website: client.website || "",
       industry: client.industry || "",
       monthlyRetainer: client.financials?.monthlyRetainer || 0,
-      contractStart: client.financials?.contractStart || "",
+      projectStartDate: client.financials?.projectStartDate || client.financials?.contractStart || "",
       notes: client.notes || "",
     });
     setIsEditingClient(true);
@@ -389,7 +386,8 @@ export default function ClientProfilePage() {
         industry: editData.industry,
         notes: editData.notes,
         "financials.monthlyRetainer": Number(editData.monthlyRetainer) || 0,
-        "financials.contractStart": editData.contractStart || "",
+        "financials.projectStartDate": editData.projectStartDate || "",
+        "financials.contractStart": editData.projectStartDate || "",
       };
       await handleUpdateClient(payload);
       
@@ -399,7 +397,8 @@ export default function ClientProfilePage() {
         financials: {
           ...prev.financials,
           monthlyRetainer: Number(editData.monthlyRetainer) || 0,
-          contractStart: editData.contractStart || "",
+          projectStartDate: editData.projectStartDate || "",
+          contractStart: editData.projectStartDate || "",
         }
       }));
 
@@ -572,7 +571,7 @@ export default function ClientProfilePage() {
 
         const projStart = newProjStartDate || new Date().toISOString().split("T")[0];
         const dueStr = addDays(projStart, 14);
-        const taxRate = client?.financials?.taxRate || 13;
+        const taxRate = client?.financials?.taxRate ?? 13;
         const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
         const total = projectVal + tax;
 
@@ -687,7 +686,7 @@ export default function ClientProfilePage() {
 
     try {
       const amount = Number(billInvAmount);
-      const taxRate = billIncludeHST ? (client.financials?.taxRate || 13) : 0;
+      const taxRate = billIncludeHST ? (client.financials?.taxRate ?? 13) : 0;
       const tax = Number(((amount * taxRate) / 100).toFixed(2));
       const total = amount + tax;
 
@@ -1080,11 +1079,11 @@ export default function ClientProfilePage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sky-500 mb-1 font-bold uppercase">Retainer Start Date</label>
+                          <label className="block text-sky-500 mb-1 font-bold uppercase">Project Start Date</label>
                           <input
                             type="date"
-                            value={editData.contractStart}
-                            onChange={(e) => setEditData({ ...editData, contractStart: e.target.value })}
+                            value={editData.projectStartDate}
+                            onChange={(e) => setEditData({ ...editData, projectStartDate: e.target.value })}
                             className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300"
                           />
                         </div>
@@ -1142,8 +1141,8 @@ export default function ClientProfilePage() {
                         <p className="mt-0.5 capitalize">{client.industry || "Not set"}</p>
                       </div>
                       <div>
-                        <p className="text-sky-400 font-bold uppercase">Retainer Start Date</p>
-                        <p className="mt-0.5">{client.financials?.contractStart || "Not set"}</p>
+                        <p className="text-sky-400 font-bold uppercase">Project Start Date</p>
+                        <p className="mt-0.5">{client.financials?.projectStartDate || client.financials?.contractStart || "Not set"}</p>
                       </div>
                       {(role === "admin" || role === "manager" || role === "client") && (
                         <div>
@@ -2181,7 +2180,7 @@ export default function ClientProfilePage() {
               {role !== "client" && (
                 <div className="p-6 border border-sky-100 rounded-3xl shadow-xl space-y-4">
                   <h3 className="text-sm font-bold text-sky-600">Financial Settings</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs font-semibold">
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 text-xs font-semibold">
                     <div>
                       <label className="block text-sky-500 mb-1">Monthly Retainer ($)</label>
                       <input
@@ -2220,6 +2219,17 @@ export default function ClientProfilePage() {
                         <option value="Weekly">Weekly</option>
                         <option value="Bi-Weekly">Bi-Weekly</option>
                         <option value="Monthly">Monthly</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">HST / Tax Option</label>
+                      <select
+                        value={client.financials?.taxRate === 13 ? "13" : "0"}
+                        onChange={(e) => handleUpdateClient({ "financials.taxRate": Number(e.target.value) || 0 })}
+                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
+                      >
+                        <option value="13">Include HST (13%)</option>
+                        <option value="0">No Tax (0%)</option>
                       </select>
                     </div>
                   </div>
