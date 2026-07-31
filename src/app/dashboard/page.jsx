@@ -266,7 +266,10 @@ export default function Dashboard() {
   const dObj = new Date();
   const todayStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, "0")}-${String(dObj.getDate()).padStart(2, "0")}`;
 
-  const totalActiveClients = scopedClients.filter((c) => c.status === "Active").length;
+  const totalActiveClients = scopedClients.filter((c) => {
+    if (c.status !== "Active") return false;
+    return !selectedMonth || (c.dateJoined && c.dateJoined.startsWith(selectedMonth));
+  }).length;
   
   const newClientsThisMonth = scopedClients.filter((c) => {
     if (!c.dateJoined) return false;
