@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { auth, db } from "@/lib/firebase";
-import { collection, getDocs, addDoc } from "firebase/firestore";
+import { auth, db, firebaseConfig } from "@/lib/firebase";
+import { collection, getDocs, addDoc, doc, setDoc } from "firebase/firestore";
+import { getApps, initializeApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { KeyRound, ShieldAlert, UserCheck, Plus, Check, Copy, Key } from "lucide-react";
 import Loader from "@/components/Loader";
@@ -183,44 +185,56 @@ Please keep these credentials secure.`;
         }
       }
 
-      // Get current logged in user ID token
-      const idToken = await auth.currentUser.getIdToken();
+      // Initialize secondary Auth to create user record without signing out Admin
+      const secondaryApp = getApps().find((app) => app.name === "secondary") || initializeApp(firebaseConfig, "secondary");
+      const secondaryAuth = getAuth(secondaryApp);
 
-      const res = await fetch("/api/admin/create-user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          name,
-          email,
-          password,
-          role: userRole,
-          phone,
-          employmentType: userRole === "client" ? "Contractor" : employmentType,
-          paymentModel: userRole === "client" ? "Hourly" : paymentModel,
-          rate: userRole === "client" ? 0 : rate,
-          assignedClients: targetClients,
-        }),
-      });
+      let userRecord;
+      try {
+        userRecord = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+      } catch (authError) {
+        console.error("Firebase Auth Creation Error:", authError);
+        throw new Error(authError.message || "Failed to create Auth account.");
+      }
 
-      let data = {};
-      const contentType = res.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        data = await res.json();
+      const newUserUid = userRecord.user.uid;
+      const parsedRate = Number(rate) || 0;
+
+      const userDocPayload = {
+        name,
+        email,
+        role: userRole,
+        phone: phone || "",
+        status: "active",
+        createdAt: new Date().toISOString()
+      };
+
+      if (userRole === "client") {
+        userDocPayload.clientId = targetClients[0] || "";
       } else {
-        const text = await res.text();
-        if (!res.ok) {
-          throw new Error(`Server Error (${res.status}): ${res.statusText || "Internal Server Error"}`);
-        }
+        userDocPayload.employmentType = employmentType || "Contractor";
+        userDocPayload.paymentModel = paymentModel || "Hourly";
+        userDocPayload.rate = parsedRate;
+        userDocPayload.assignedClients = targetClients;
+        userDocPayload.assignedProjects = [];
       }
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create user account.");
-      }
+      // Save directly to Firestore users collection
+      await setDoc(doc(db, "users", newUserUid), userDocPayload);
 
-      setSuccessData(data);
+      // Sign out from secondary auth instance
+      await signOut(secondaryAuth);
+
+      const successResponse = {
+        success: true,
+        uid: newUserUid,
+        email: email,
+        password: password,
+        role: userRole,
+        message: "Team member user created successfully."
+      };
+
+      setSuccessData(successResponse);
       setSharePhone(phone || "");
       // Reset form
       setName("");

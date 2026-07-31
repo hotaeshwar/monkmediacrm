@@ -49,7 +49,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
-      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && (request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
       allow update: if isSignedIn() && (
         (request.auth.uid == userId && resource.data.role == request.resource.data.role) ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'

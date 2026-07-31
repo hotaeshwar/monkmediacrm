@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyA4bo26wCGVD5QgBGkM8ssIhG57BKtadVI",
   authDomain: "mediacrm-9b0a0.firebaseapp.com",
   projectId: "mediacrm-9b0a0",
