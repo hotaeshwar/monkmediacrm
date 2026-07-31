@@ -44,7 +44,8 @@ export default function ClientsPage() {
   const [initialProjName, setInitialProjName] = useState("");
   const [initialProjDescription, setInitialProjDescription] = useState("");
   const [driveLinks, setDriveLinks] = useState([]); // Array of { title: "", url: "" }
-  const [includeHST, setIncludeHST] = useState(true);
+  const [initialProjInvoiceDueDate, setInitialProjInvoiceDueDate] = useState("");
+  const [includeHST, setIncludeHST] = useState(false);
   const [projects, setProjects] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const today = new Date();
@@ -247,7 +248,7 @@ export default function ClientsPage() {
           const cleanProjName = initialProjName.trim().substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
           const invoiceNum = `INV-${cleanProjName}-${Date.now().toString().slice(-6)}`;
           const projStart = initialProjStartDate || onboardingDate;
-          const dueStr = addDays(projStart, 14);
+          const dueStr = initialProjInvoiceDueDate || addDays(projStart, 14);
           const clientTaxRate = includeHST ? 13 : 0;
           const tax = Number(((projectVal * clientTaxRate) / 100).toFixed(2));
           const total = projectVal + tax;
@@ -318,6 +319,7 @@ export default function ClientsPage() {
       setInitialProjVal("");
       setInitialProjStartDate("");
       setInitialProjEndDate("");
+      setInitialProjInvoiceDueDate("");
       setInitialProjManager("");
       setInitialProjDescription("");
       setDriveLinks([]);
@@ -783,6 +785,16 @@ export default function ClientsPage() {
                                 className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
                               />
                             </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-sky-500 uppercase tracking-wider mb-1">Invoice Due Date</label>
+                            <input
+                              type="date"
+                              value={initialProjInvoiceDueDate}
+                              onChange={(e) => setInitialProjInvoiceDueDate(e.target.value)}
+                              className="w-full p-2 bg-white border border-sky-100 rounded-xl text-xs text-sky-600 outline-none"
+                            />
                           </div>
 
                           <div>

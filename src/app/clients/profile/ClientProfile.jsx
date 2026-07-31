@@ -84,6 +84,7 @@ export default function ClientProfilePage() {
   const [newProjType, setNewProjType] = useState("Marketing");
   const [newProjStartDate, setNewProjStartDate] = useState("");
   const [newProjEndDate, setNewProjEndDate] = useState("");
+  const [newProjInvoiceDueDate, setNewProjInvoiceDueDate] = useState("");
   const [newProjValue, setNewProjValue] = useState("");
 
   // Edit Project Form States
@@ -570,8 +571,8 @@ export default function ClientProfilePage() {
         };
 
         const projStart = newProjStartDate || new Date().toISOString().split("T")[0];
-        const dueStr = addDays(projStart, 14);
-        const taxRate = client?.financials?.taxRate ?? 13;
+        const dueStr = newProjInvoiceDueDate || addDays(projStart, 14);
+        const taxRate = client?.financials?.taxRate ?? 0;
         const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
         const total = projectVal + tax;
 
@@ -605,6 +606,7 @@ export default function ClientProfilePage() {
       setNewProjName("");
       setNewProjStartDate("");
       setNewProjEndDate("");
+      setNewProjInvoiceDueDate("");
       setNewProjValue("");
       alert("Project created successfully!");
     } catch (err) {
@@ -1575,6 +1577,15 @@ export default function ClientProfilePage() {
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sky-500 mb-1">Invoice Due Date</label>
+                      <input
+                        type="date"
+                        value={newProjInvoiceDueDate}
+                        onChange={(e) => setNewProjInvoiceDueDate(e.target.value)}
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
                     <div className="sm:col-span-3 flex items-end justify-end">
                       <button
                         type="submit"
@@ -2226,7 +2237,8 @@ export default function ClientProfilePage() {
                       <select
                         value={client.financials?.taxRate === 13 ? "13" : "0"}
                         onChange={(e) => handleUpdateClient({ "financials.taxRate": Number(e.target.value) || 0 })}
-                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
+                        disabled={role !== "admin"}
+                        className={`w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white ${role !== "admin" ? "opacity-60 cursor-not-allowed" : ""}`}
                       >
                         <option value="13">Include HST (13%)</option>
                         <option value="0">No Tax (0%)</option>

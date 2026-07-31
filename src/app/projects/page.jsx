@@ -32,6 +32,7 @@ export default function ProjectsPage() {
   const [projManager, setProjManager] = useState("");
   const [projDescription, setProjDescription] = useState("");
   const [projBillingType, setProjBillingType] = useState("One-Time");
+  const [projInvoiceDueDate, setProjInvoiceDueDate] = useState("");
   const [formError, setFormError] = useState("");
 
   // Edit Project Form State
@@ -482,8 +483,8 @@ export default function ProjectsPage() {
         };
 
         const projStart = projStartDate || new Date().toISOString().split("T")[0];
-        const dueStr = addDays(projStart, 14);
-        const taxRate = parentClient?.financials?.taxRate ?? 13;
+        const dueStr = projInvoiceDueDate || addDays(projStart, 14);
+        const taxRate = parentClient?.financials?.taxRate ?? 0;
         const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
         const total = projectVal + tax;
 
@@ -499,7 +500,7 @@ export default function ProjectsPage() {
           const invData = existingInvDoc.data();
           const oldAmount = Number(invData.amount) || 0;
           const newAmount = oldAmount + projectVal;
-          const clientTaxRate = parentClient?.financials?.taxRate ?? 13;
+          const clientTaxRate = parentClient?.financials?.taxRate ?? 0;
           const newTax = Number(((newAmount * clientTaxRate) / 100).toFixed(2));
           const newTotal = newAmount + newTax;
 
@@ -557,6 +558,7 @@ export default function ProjectsPage() {
       setProjBillingType("One-Time");
       setProjStartDate("");
       setProjEndDate("");
+      setProjInvoiceDueDate("");
       setProjManager("");
       setProjDescription("");
       setCreateOpen(false);
@@ -1014,6 +1016,18 @@ export default function ProjectsPage() {
                         className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none"
                       />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Invoice Due Date
+                    </label>
+                    <input
+                      type="date"
+                      value={projInvoiceDueDate}
+                      onChange={(e) => setProjInvoiceDueDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
+                    />
                   </div>
 
                   <div>

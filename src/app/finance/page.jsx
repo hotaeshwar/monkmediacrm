@@ -2148,7 +2148,8 @@ export default function FinancePage() {
                         required
                         value={editInvTaxPercent}
                         onChange={(e) => setEditInvTaxPercent(Number(e.target.value) || 0)}
-                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                        disabled={role !== "admin"}
+                        className={`w-full p-2 border border-sky-100 rounded-xl text-sky-600 ${role !== "admin" ? "opacity-60 cursor-not-allowed bg-slate-50" : ""}`}
                       />
                     </div>
                     <div>
