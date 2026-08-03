@@ -3,9 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
 import Link from "next/link";
-import { Search, Plus, User, Filter, RefreshCw, X, Trash2 } from "lucide-react";
+import { Search, Plus, User, Filter, RefreshCw, X, Trash2, DollarSign } from "lucide-react";
 import Loader from "@/components/Loader";
 
 export default function ClientsPage() {
@@ -17,6 +17,11 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+
+  // Payments Log Modal States
+  const [selectedClientForPayments, setSelectedClientForPayments] = useState(null);
+  const [clientPayments, setClientPayments] = useState([]);
+  const [clientInvoices, setClientInvoices] = useState([]);
 
   // Create Client Drawer State
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -47,10 +52,8 @@ export default function ClientsPage() {
   const [initialProjInvoiceDueDate, setInitialProjInvoiceDueDate] = useState("");
   const [includeHST, setIncludeHST] = useState(false);
   const [projects, setProjects] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const getClientCampaignValue = (clientId) => {
     return projects
@@ -132,10 +135,11 @@ export default function ClientsPage() {
       c.email?.toLowerCase().includes(searchLower);
 
     // 3. Status filtering
-    const matchStatus = statusFilter === "All" || c.status === statusFilter;
+    const matchStatus = statusFilter === "All" ? c.status !== "Archived" : c.status === statusFilter;
 
     // 4. Date filtering
-    const matchMonth = !selectedMonth || (c.dateJoined && c.dateJoined.startsWith(selectedMonth));
+    const matchMonth = (!dateFrom || (c.dateJoined && c.dateJoined >= dateFrom)) &&
+                       (!dateTo || (c.dateJoined && c.dateJoined <= dateTo));
 
     return matchSearch && matchStatus && matchMonth;
   });
@@ -356,6 +360,80 @@ export default function ClientsPage() {
     }
   };
 
+  const handleOpenPaymentsModal = async (client) => {
+    setSelectedClientForPayments(client);
+    try {
+      // 1. Fetch invoices
+      const qInv = query(collection(db, "invoices"), where("clientId", "==", client.id));
+      const snapInv = await getDocs(qInv);
+      const listInv = [];
+      snapInv.forEach((doc) => listInv.push({ id: doc.id, ...doc.data() }));
+      setClientInvoices(listInv);
+
+      // 2. Fetch projects
+      const qProj = query(collection(db, "projects"), where("clientId", "==", client.id));
+      const snapProj = await getDocs(qProj);
+      const listProj = [];
+      snapProj.forEach((doc) => listProj.push({ id: doc.id, ...doc.data() }));
+
+      // 3. Determine primaryInvoiceNumber
+      const primaryInvNum = listInv.length > 0
+        ? (listInv.find((inv) => inv.invoiceNumber)?.invoiceNumber || "INV-WEB-856502")
+        : "INV-WEB-856502";
+
+      // 4. Fetch all payments
+      const snapPay = await getDocs(collection(db, "payments"));
+      const allPay = [];
+      snapPay.forEach((doc) => allPay.push({ id: doc.id, ...doc.data() }));
+
+      // 5. Synthesize entries mapped by projects
+      const listPay = listProj.map((proj) => {
+        const realInv = listInv.find((inv) => inv.projectId === proj.id);
+        const taxRate = client.financials?.taxRate ?? 13;
+        const baseVal = Number(proj.value) || 0;
+        const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
+        const total = baseVal + tax;
+        const status = proj.status === "Completed" ? "Paid" : "Due";
+
+        if (status === "Paid") {
+          const realPay = allPay.find((p) => p.invoiceId === primaryInvNum && p.amount > 0);
+          return {
+            id: realInv?.id ? `pay-${realInv.id}` : `proj-pay-${proj.id}`,
+            invoiceId: primaryInvNum,
+            clientId: client.id,
+            amount: total,
+            dateReceived: realPay?.dateReceived || realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
+            method: realPay?.method || "",
+            notes: realPay?.notes || `Payment for Campaign: ${proj.name}`,
+            isOutstanding: false
+          };
+        } else {
+          return {
+            id: realInv?.id ? `pay-due-${realInv.id}` : `proj-due-${proj.id}`,
+            invoiceId: primaryInvNum,
+            clientId: client.id,
+            amount: 0,
+            dateReceived: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
+            method: "",
+            notes: `Project Campaign: ${proj.name} (Unpaid)`,
+            isOutstanding: true,
+            balance: total
+          };
+        }
+      });
+
+      setClientPayments(listPay);
+    } catch (err) {
+      console.error("Error fetching client financial logs:", err);
+    }
+  };
+
+  const getInvoiceNumber = (invoiceId) => {
+    if (!invoiceId) return "General / Pre-payment";
+    const inv = clientInvoices.find((i) => i.id === invoiceId || i.invoiceNumber === invoiceId);
+    return inv ? inv.invoiceNumber : `Ref: ${invoiceId.substring(0, 8)}`;
+  };
+
   return (
     <div className="p-4 sm:p-8 bg-white min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -419,13 +497,24 @@ export default function ClientsPage() {
               <option value="Archived">Archived</option>
             </select>
           </div>
-          {/* Month Date Picker */}
-          <div className="relative min-w-[160px]">
+          {/* Date Range Picker */}
+          <div className="flex flex-row items-center gap-2">
             <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full px-4 py-2.5 bg-white border border-sky-100 rounded-2xl text-sm text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300 font-semibold"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-4 py-2.5 bg-white border border-sky-100 rounded-2xl text-xs text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300 font-semibold"
+              placeholder="From"
+              title="From Date"
+            />
+            <span className="text-sky-300 text-xs font-semibold">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="px-4 py-2.5 bg-white border border-sky-100 rounded-2xl text-xs text-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-300 font-semibold"
+              placeholder="To"
+              title="To Date"
             />
           </div>
         </div>
@@ -461,9 +550,11 @@ export default function ClientsPage() {
                   {filteredClients.map((c) => (
                     <tr key={c.id} className="hover:bg-sky-50/20 transition-colors">
                       <td className="py-4.5 px-6">
-                        <Link href={`/clients/profile?id=${c.id}`} className="font-bold text-sky-600 hover:underline">
-                          {c.businessName}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link href={`/clients/profile?id=${c.id}`} className="font-bold text-sky-600 hover:underline">
+                            {c.businessName}
+                          </Link>
+                        </div>
                       </td>
                       <td className="py-4.5 px-6 flex flex-col">
                         <span>{c.contactPerson}</span>
@@ -503,9 +594,21 @@ export default function ClientsPage() {
                       </td>
                       <td className="py-4.5 px-6 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleOpenPaymentsModal(c);
+                            }}
+                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 rounded-full text-[11px] font-bold transition-all whitespace-nowrap inline-block text-center shadow-sm"
+                            title="Quick View Payments"
+                          >
+                            Payments
+                          </button>
                           <Link
                             href={`/clients/profile?id=${c.id}`}
-                            className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl text-xs font-bold transition-all"
+                            className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 rounded-full text-[11px] font-bold transition-all whitespace-nowrap inline-block text-center shadow-sm"
                           >
                             View Profile
                           </Link>
@@ -881,6 +984,99 @@ export default function ClientsPage() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Payments Log Modal */}
+        {selectedClientForPayments && (
+          <div className="fixed inset-0 bg-sky-950/40 backdrop-blur-sm flex items-center justify-center z-[2000] p-4">
+            <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-sky-100 flex flex-col max-h-[90vh]">
+              {/* Modal Header */}
+              <div className="p-6 bg-sky-50/20 border-b border-sky-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sky-600 text-sm">Payments Log</h3>
+                  <p className="text-[10px] text-sky-400 font-semibold mt-0.5">{selectedClientForPayments.businessName}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedClientForPayments(null);
+                    setClientPayments([]);
+                    setClientInvoices([]);
+                  }}
+                  className="p-1.5 text-sky-400 hover:bg-sky-50 rounded-xl transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto min-h-[150px]">
+                {clientPayments.length === 0 ? (
+                  <div className="p-12 text-center text-sky-400 text-xs font-semibold">
+                    No individual payment records found for this client.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-sky-100 rounded-2xl">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                          <th className="p-3 px-4">Date</th>
+                          <th className="p-3 px-4">Invoice / Reference</th>
+                          <th className="p-3 px-4">Method</th>
+                          <th className="p-3 px-4">Notes</th>
+                          <th className="p-3 px-4 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sky-600 font-semibold divide-y divide-sky-100">
+                        {[...clientPayments]
+                          .sort((a, b) => (b.dateReceived || "").localeCompare(a.dateReceived || ""))
+                          .map((pay) => (
+                            <tr key={pay.id} className="hover:bg-sky-50/5">
+                              <td className="p-3 px-4 whitespace-nowrap">{pay.dateReceived}</td>
+                              <td className="p-3 px-4 font-bold">{pay.invoiceId}</td>
+                              <td className="p-3 px-4 capitalize">
+                                {pay.isOutstanding ? (
+                                  <span className="text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-[10px] font-bold">Outstanding</span>
+                                ) : (
+                                  pay.method || "Other"
+                                )}
+                              </td>
+                              <td className="p-3 px-4 text-sky-400 font-medium max-w-[150px] truncate" title={pay.notes}>
+                                {pay.notes || "None"}
+                              </td>
+                              {pay.isOutstanding ? (
+                                <td className="p-3 px-4 text-right text-amber-500 font-bold whitespace-nowrap">
+                                  Due: ${Number(pay.balance).toLocaleString()}
+                                </td>
+                              ) : (
+                                <td className="p-3 px-4 text-right text-emerald-600 font-bold whitespace-nowrap">
+                                  +${Number(pay.amount).toLocaleString()}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-sky-50/10 border-t border-sky-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedClientForPayments(null);
+                    setClientPayments([]);
+                    setClientInvoices([]);
+                  }}
+                  className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                >
+                  Close Logs
+                </button>
               </div>
             </div>
           </div>

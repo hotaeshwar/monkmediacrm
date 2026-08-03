@@ -74,10 +74,8 @@ export default function Dashboard() {
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [users, setUsers] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
 
   // Redirect if not logged in
@@ -268,12 +266,12 @@ export default function Dashboard() {
 
   const totalActiveClients = scopedClients.filter((c) => {
     if (c.status !== "Active") return false;
-    return !selectedMonth || (c.dateJoined && c.dateJoined.startsWith(selectedMonth));
+    return (!dateFrom || (c.dateJoined && c.dateJoined >= dateFrom)) && (!dateTo || (c.dateJoined && c.dateJoined <= dateTo));
   }).length;
   
   const newClientsThisMonth = scopedClients.filter((c) => {
     if (!c.dateJoined) return false;
-    return c.dateJoined.startsWith(selectedMonth);
+    return (!dateFrom || c.dateJoined >= dateFrom) && (!dateTo || c.dateJoined <= dateTo);
   }).length;
 
   const activeProjectsCount = scopedProjects.filter((p) => p.status !== "Cancelled").length;
@@ -333,19 +331,19 @@ export default function Dashboard() {
 
     mrr = clientRetainersSum + projectRetainersSum;
 
-    // Revenue received this month: Invoices paid in selectedMonth
+    // Revenue received in period: Invoices paid in range
     revenueReceivedThisMonth = scopedInvoices.reduce((acc, inv) => {
       if (inv.status !== "Paid" && inv.status !== "Received" && (Number(inv.amountPaid) || 0) <= 0) return acc;
       const dateStr = inv.invoiceDate || inv.dueDate;
-      if (dateStr && dateStr.startsWith(selectedMonth)) {
+      if (dateStr && (!dateFrom || dateStr >= dateFrom) && (!dateTo || dateStr <= dateTo)) {
         return acc + (Number(inv.amountPaid) || 0);
       }
       return acc;
     }, 0);
 
-    // Additional manual/project invoices created in selectedMonth (excluding recurring ones)
+    // Additional manual/project invoices created in range (excluding recurring ones)
     additionalInvoicesRevenue = scopedInvoices.reduce((acc, inv) => {
-      if (inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth)) {
+      if (inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo)) {
         const isRecurring = String(inv.invoiceNumber || "").startsWith("REC-") || String(inv.notes || "").toLowerCase().includes("recurring");
         if (!isRecurring) {
           return acc + (Number(inv.amount) || 0);
@@ -354,37 +352,37 @@ export default function Dashboard() {
       return acc;
     }, 0);
 
-    // Outstanding payments for selectedMonth
+    // Outstanding payments for range
     outstandingPayments = scopedInvoices.reduce((acc, inv) => {
       const status = inv.status || "Due";
       if (status === "Paid" || status === "Received") return acc;
-      if (inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth)) {
+      if (inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo)) {
         return acc + (Number(inv.balance) || 0);
       }
       return acc;
     }, 0);
 
-    // Overdue payments for selectedMonth
+    // Overdue payments for range
     overduePayments = scopedInvoices.reduce((acc, inv) => {
       const status = inv.status || "Due";
       if (status !== "Paid" && status !== "Received" && inv.dueDate < todayStr) {
-        if (inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth)) {
+        if (inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo)) {
           return acc + (Number(inv.balance) || 0);
         }
       }
       return acc;
     }, 0);
 
-    // Monthly expenses (expenses logged in selectedMonth)
+    // Expenses in range
     monthlyExpenses = scopedExpenses.reduce((acc, exp) => {
-      if (exp.date && exp.date.startsWith(selectedMonth)) {
+      if (exp.date && (!dateFrom || exp.date >= dateFrom) && (!dateTo || exp.date <= dateTo)) {
         return acc + (Number(exp.amount) || 0);
       }
       return acc;
     }, 0);
 
-    // Calculate retainer metrics for selectedMonth
-    const retainerInvoices = scopedInvoices.filter(inv => inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth) && isRetainerInvoice(inv));
+    // Calculate retainer metrics for range
+    const retainerInvoices = scopedInvoices.filter(inv => inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo) && isRetainerInvoice(inv));
     retainerAdded = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
     retainerReceived = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
     retainerDue = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
@@ -467,9 +465,16 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-4 py-2 border border-sky-100 rounded-2xl text-xs text-sky-600 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-300 bg-white"
+            />
+            <span className="text-sky-300 text-xs font-semibold">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
               className="px-4 py-2 border border-sky-100 rounded-2xl text-xs text-sky-600 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-300 bg-white"
             />
           </div>
@@ -483,7 +488,7 @@ export default function Dashboard() {
             <div>
               <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Active Clients</p>
               <h3 className="text-2xl font-bold text-sky-600 mt-1">{totalActiveClients}</h3>
-              <p className="text-[10px] text-sky-400 mt-1 font-semibold">+{newClientsThisMonth} new this month</p>
+              <p className="text-[10px] text-sky-400 mt-1 font-semibold">+{newClientsThisMonth} new in selected period</p>
             </div>
             <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
               <Users className="w-5 h-5" />
@@ -604,7 +609,7 @@ export default function Dashboard() {
 
             {/* Synced Retainer billing metrics row */}
             <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest pt-2">
-              Retainer Billing Performance ({selectedMonth})
+              Retainer Billing Performance {dateFrom || dateTo ? `(${dateFrom || 'Start'} to ${dateTo || 'End'})` : '(All Time)'}
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
               {/* Retainers Added Card */}

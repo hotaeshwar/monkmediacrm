@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, getDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, getDoc, query, where, getDocs } from "firebase/firestore";
 import { ShieldAlert, TrendingUp, TrendingDown, DollarSign, Plus, Check, FileText, FileMinus, X, Printer, Download, Trash2, Edit2, AlertTriangle } from "lucide-react";
 import Loader from "@/components/Loader";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
@@ -15,14 +15,16 @@ export default function FinancePage() {
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [payments, setPayments] = useState([]);
+
+  // Payments Log Modal States
+  const [selectedClientForPayments, setSelectedClientForPayments] = useState(null);
+  const [clientPayments, setClientPayments] = useState([]);
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // Tab State
   const [activeTab, setActiveTab] = useState("invoices"); // invoices, expenses, payments, profit
@@ -213,22 +215,96 @@ export default function FinancePage() {
     return c.accountManager === currentUser?.uid || adminIds.includes(c.accountManager) || !c.accountManager;
   });
 
-  const scopedInvoices = invoices.filter((inv) => {
-    if (role === "admin") return true;
-    return scopedClients.some((c) => c.id === inv.clientId);
-  });
+  const allSynthesizedInvoices = React.useMemo(() => {
+    const list = [];
+    clients.forEach((cl) => {
+      const clientProjs = projects.filter((p) => p.clientId === cl.id);
+      const clientInvs = invoices.filter((i) => i.clientId === cl.id);
+      
+      const primaryInvNum = clientInvs.length > 0
+        ? (clientInvs.find((inv) => inv.invoiceNumber)?.invoiceNumber || "INV-WEB-856502")
+        : "INV-WEB-856502";
+
+      clientProjs.forEach((proj) => {
+        const realInv = clientInvs.find((inv) => inv.projectId === proj.id);
+        const taxRate = cl.financials?.taxRate ?? 13;
+        const baseVal = Number(proj.value) || 0;
+        const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
+        const total = baseVal + tax;
+        const status = proj.status === "Completed" ? "Received" : "Due";
+
+        list.push({
+          id: realInv?.id || `sim-inv-${proj.id}`,
+          invoiceNumber: primaryInvNum,
+          invoiceDate: realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
+          dueDate: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
+          amount: baseVal,
+          tax,
+          total,
+          amountPaid: status === "Received" ? total : 0,
+          balance: status === "Received" ? 0 : total,
+          status,
+          projectId: proj.id,
+          projectName: proj.name,
+          clientName: cl.businessName,
+          clientAttention: cl.contactPerson || "",
+          clientEmail: cl.email || "",
+          realInvoiceId: realInv?.id || null,
+          clientId: cl.id
+        });
+      });
+    });
+    return list;
+  }, [invoices, projects, clients]);
+
+  const scopedInvoices = React.useMemo(() => {
+    const list = allSynthesizedInvoices;
+    if (role === "admin") return list;
+    return list.filter((inv) => scopedClients.some((c) => c.id === inv.clientId));
+  }, [allSynthesizedInvoices, role, scopedClients]);
 
   const scopedExpenses = expenses.filter((exp) => {
     if (role === "admin") return true;
     return scopedClients.some((c) => c.id === exp.clientId);
   });
 
-  const scopedPayments = payments.filter((pay) => {
-    if (role === "admin") return true;
-    // Map payment invoice to client check
-    const parentInv = invoices.find((i) => i.id === pay.invoiceId);
-    return parentInv && scopedClients.some((c) => c.id === parentInv.clientId);
-  });
+  const allSynthesizedPayments = React.useMemo(() => {
+    const list = [];
+    allSynthesizedInvoices.forEach((inv) => {
+      if (inv.status === "Received") {
+        const realPay = payments.find((p) => p.invoiceId === inv.invoiceNumber && p.amount > 0);
+        list.push({
+          id: `pay-${inv.id}`,
+          invoiceId: inv.invoiceNumber,
+          clientId: inv.clientId,
+          amount: inv.total,
+          dateReceived: realPay?.dateReceived || inv.invoiceDate,
+          method: realPay?.method || "",
+          notes: realPay?.notes || `Payment for Campaign: ${inv.projectName}`,
+          isOutstanding: false
+        });
+      } else {
+        list.push({
+          id: `pay-${inv.id}`,
+          invoiceId: inv.invoiceNumber,
+          clientId: inv.clientId,
+          amount: 0,
+          dateReceived: inv.dueDate,
+          method: "",
+          notes: `Project Campaign: ${inv.projectName} (Unpaid)`,
+          isOutstanding: true,
+          balance: inv.total
+        });
+      }
+    });
+    return list;
+  }, [allSynthesizedInvoices, payments]);
+
+  const scopedPayments = React.useMemo(() => {
+    const list = allSynthesizedPayments;
+    if (role === "admin") return list;
+    return list.filter((pay) => scopedClients.some((c) => c.id === pay.clientId));
+  }, [allSynthesizedPayments, role, scopedClients]);
 
   const isRetainerInvoice = (inv) => {
     if (!inv) return false;
@@ -246,10 +322,19 @@ export default function FinancePage() {
   const d = new Date();
   const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-  // Filter scoped data by selectedMonth using startsWith
-  const filteredInvoices = scopedInvoices.filter((inv) => inv.invoiceDate && inv.invoiceDate.startsWith(selectedMonth));
-  const filteredExpenses = scopedExpenses.filter((exp) => exp.date && exp.date.startsWith(selectedMonth));
-  const filteredPayments = scopedPayments.filter((pay) => pay.dateReceived && pay.dateReceived.startsWith(selectedMonth));
+  // Filter scoped data by date range if selected
+  const filteredInvoices = scopedInvoices.filter((inv) => {
+    if (!inv.invoiceDate) return false;
+    return (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo);
+  });
+  const filteredExpenses = scopedExpenses.filter((exp) => {
+    if (!exp.date) return false;
+    return (!dateFrom || exp.date >= dateFrom) && (!dateTo || exp.date <= dateTo);
+  });
+  const filteredPayments = scopedPayments.filter((pay) => {
+    if (!pay.dateReceived) return false;
+    return (!dateFrom || pay.dateReceived >= dateFrom) && (!dateTo || pay.dateReceived <= dateTo);
+  });
 
   const totalBilling = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
   const totalReceived = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
@@ -270,6 +355,18 @@ export default function FinancePage() {
   const retainerAdded = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
   const retainerReceived = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
   const retainerDue = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
+
+  const handleOpenPaymentsModal = (client) => {
+    setSelectedClientForPayments(client);
+    const listPay = allSynthesizedPayments.filter((pay) => pay.clientId === client.id);
+    setClientPayments(listPay);
+  };
+
+  const getInvoiceNumberForModal = (invoiceId) => {
+    if (!invoiceId) return "General / Pre-payment";
+    const inv = invoices.find((i) => i.id === invoiceId || i.invoiceNumber === invoiceId);
+    return inv ? inv.invoiceNumber : `Ref: ${invoiceId.substring(0, 8)}`;
+  };
 
   // Add actions
   const handleLogInvoice = async (e) => {
@@ -909,9 +1006,16 @@ export default function FinancePage() {
           </div>
           <div className="flex items-center gap-2">
             <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-4 py-2 border border-sky-100 rounded-2xl text-xs text-sky-600 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-300 bg-white"
+            />
+            <span className="text-sky-300 text-xs font-semibold">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
               className="px-4 py-2 border border-sky-100 rounded-2xl text-xs text-sky-600 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-300 bg-white"
             />
           </div>
@@ -951,7 +1055,9 @@ export default function FinancePage() {
 
         {/* RETAINER SUMMARY CARD PANEL */}
         <div className="space-y-3">
-          <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest">Retainer Billing Summary ({selectedMonth})</h3>
+          <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest">
+            Retainer Billing Summary {dateFrom || dateTo ? `(${dateFrom || 'Start'} to ${dateTo || 'End'})` : '(All Time)'}
+          </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm">
               <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Added</p>
@@ -1037,7 +1143,11 @@ export default function FinancePage() {
                         return (
                           <tr key={inv.id} className="hover:bg-sky-50/10">
                             <td className="p-4 px-6 font-bold">{inv.invoiceNumber}</td>
-                            <td className="p-4 px-6">{getClientName(inv.clientId)}</td>
+                             <td className="p-4 px-6">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-sky-900">{getClientName(inv.clientId)}</span>
+                              </div>
+                            </td>
                             <td className={`p-4 px-6 ${isOverdue ? "text-red-500 font-bold" : ""}`}>
                               {inv.dueDate}
                             </td>
@@ -1047,7 +1157,10 @@ export default function FinancePage() {
                                 onChange={async (e) => {
                                   const newStatus = e.target.value;
                                   const updatePayload = { status: newStatus };
+                                  let amountToLog = 0;
+
                                   if (newStatus === "Received") {
+                                    amountToLog = Math.max(0, inv.total - (Number(inv.amountPaid) || 0));
                                     updatePayload.amountPaid = inv.total;
                                     updatePayload.balance = 0;
                                   } else if (newStatus === "Due") {
@@ -1057,11 +1170,36 @@ export default function FinancePage() {
                                     const partialAmt = prompt("Enter amount received for this invoice:", inv.amountPaid || "0");
                                     if (partialAmt === null) return;
                                     const amt = Number(partialAmt) || 0;
+                                    amountToLog = amt - (Number(inv.amountPaid) || 0);
                                     updatePayload.amountPaid = amt;
                                     updatePayload.balance = Math.max(0, inv.total - amt);
                                   }
                                   try {
                                     await updateDoc(doc(db, "invoices", inv.id), updatePayload);
+
+                                    if (amountToLog > 0) {
+                                      // 1. Add Payment record
+                                      await addDoc(collection(db, "payments"), {
+                                        invoiceId: inv.id,
+                                        clientId: inv.clientId,
+                                        amount: amountToLog,
+                                        dateReceived: new Date().toISOString().split("T")[0],
+                                        method: inv.paymentMethod || "Credit Card",
+                                        notes: `Status changed to ${newStatus} in finance invoice settings.`,
+                                      });
+
+                                      // 2. Update client total paid
+                                      const clientRef = doc(db, "clients", inv.clientId);
+                                      const clientDoc = await getDoc(clientRef);
+                                      if (clientDoc.exists()) {
+                                        const clientData = clientDoc.data();
+                                        const prevPaid = Number(clientData.financials?.totalPaid) || 0;
+                                        await updateDoc(clientRef, {
+                                          "financials.totalPaid": prevPaid + amountToLog,
+                                          "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
+                                        });
+                                      }
+                                    }
                                   } catch (err) {
                                     alert("Error updating status: " + err.message);
                                   }
@@ -1091,6 +1229,23 @@ export default function FinancePage() {
                             <td className="p-4 px-6 text-right">${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 px-6 text-right font-bold">${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 px-6 text-right flex items-center justify-end gap-2">
+                               <button
+                                 type="button"
+                                 onClick={async (e) => {
+                                   e.preventDefault();
+                                   e.stopPropagation();
+                                   const clientObj = clients.find((c) => c.id === inv.clientId) || { id: inv.clientId, businessName: getClientName(inv.clientId) };
+                                   handleOpenPaymentsModal(clientObj);
+                                 }}
+                                 className={`px-2.5 py-1 border rounded-full text-[11px] font-bold transition-all whitespace-nowrap inline-block text-center shadow-sm ${
+                                   inv.status === "Received" || inv.status === "Paid"
+                                     ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-100"
+                                     : "bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100"
+                                 }`}
+                                 title="Quick View Payments"
+                               >
+                                 {inv.status === "Received" || inv.status === "Paid" ? "Received" : "Payments"}
+                               </button>
                               <button
                                 onClick={() => handleDownloadPDF(inv)}
                                 className="p-1 text-green-600 hover:text-green-700 hover:bg-green-50 rounded border border-green-200 transition"
@@ -1108,13 +1263,43 @@ export default function FinancePage() {
                               {inv.status !== "Received" && (
                                 <button
                                   onClick={async () => {
-                                    await updateDoc(doc(db, "invoices", inv.id), {
-                                      status: "Received",
-                                      amountPaid: inv.total,
-                                      balance: 0,
-                                    });
+                                    try {
+                                      if (inv.realInvoiceId) {
+                                        await updateDoc(doc(db, "invoices", inv.realInvoiceId), {
+                                          status: "Received",
+                                          amountPaid: inv.total,
+                                          balance: 0
+                                        });
+                                      }
+                                      await updateDoc(doc(db, "projects", inv.projectId), {
+                                        status: "Completed"
+                                      });
+
+                                      await addDoc(collection(db, "payments"), {
+                                        invoiceId: inv.invoiceNumber,
+                                        clientId: inv.clientId,
+                                        amount: inv.total,
+                                        dateReceived: new Date().toISOString().split("T")[0],
+                                        method: inv.paymentMethod || "Bank Transfer",
+                                        notes: `Payment for Campaign: ${inv.projectName}`
+                                      });
+
+                                      const clientRef = doc(db, "clients", inv.clientId);
+                                      const clientDoc = await getDoc(clientRef);
+                                      if (clientDoc.exists()) {
+                                        const clientData = clientDoc.data();
+                                        const prevPaid = Number(clientData.financials?.totalPaid) || 0;
+                                        await updateDoc(clientRef, {
+                                          "financials.totalPaid": prevPaid + inv.total,
+                                          "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
+                                        });
+                                      }
+                                      alert("Invoice marked as Received successfully!");
+                                    } catch (err) {
+                                      alert("Error: " + err.message);
+                                    }
                                   }}
-                                  className="px-2 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded text-[10px] font-bold transition shadow"
+                                    className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white border border-sky-600 rounded-full text-[11px] font-bold transition shadow-sm whitespace-nowrap inline-block text-center"
                                 >
                                   Mark Received
                                 </button>
@@ -1214,6 +1399,7 @@ export default function FinancePage() {
                   <table className="w-full text-left">
                   <thead>
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                      <th className="p-4 px-6">Client</th>
                       <th className="p-4 px-6">Invoice ID</th>
                       <th className="p-4 px-6">Date Received</th>
                       <th className="p-4 px-6">Payment Method</th>
@@ -1225,37 +1411,63 @@ export default function FinancePage() {
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
                     {filteredPayments.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-sky-400 font-medium">
+                        <td colSpan={7} className="p-8 text-center text-sky-400 font-medium">
                           No payments processed for this period.
                         </td>
                       </tr>
                     ) : (
                       filteredPayments.map((pay) => (
                         <tr key={pay.id} className="hover:bg-sky-50/10">
-                          <td className="p-4 px-6 font-bold">Ref ID: {pay.invoiceId.substring(0, 8)}...</td>
+                           <td className="p-4 px-6">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sky-900">
+                                {getClientName(pay.clientId) !== "Unknown Client"
+                                  ? getClientName(pay.clientId)
+                                  : getClientName(invoices.find((i) => i.id === pay.invoiceId)?.clientId)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4 px-6 text-sky-400">
+                            {pay.invoiceId ? `Ref ID: ${pay.invoiceId.substring(0, 8)}...` : "None"}
+                          </td>
                           <td className="p-4 px-6">{pay.dateReceived}</td>
                           <td className="p-4 px-6 capitalize">{pay.method}</td>
                           <td className="p-4 px-6 text-sky-400 font-medium">{pay.notes || "None"}</td>
                           <td className="p-4 px-6 text-right text-sky-600 font-bold">+${Number(pay.amount).toLocaleString()}</td>
                           <td className="p-4 px-6 text-right">
-                            {role === "admin" && (
+                            <div className="flex items-center justify-end gap-2">
                               <button
-                                onClick={async () => {
-                                  if (confirm("Are you sure you want to delete this payment record?")) {
-                                    try {
-                                      await deleteDoc(doc(db, "payments", pay.id));
-                                      alert("Payment record deleted successfully!");
-                                    } catch (err) {
-                                      alert("Error: " + err.message);
-                                    }
-                                  }
+                                type="button"
+                                onClick={async (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const clientObj = clients.find((c) => c.id === pay.clientId) || { id: pay.clientId, businessName: getClientName(pay.clientId) };
+                                  handleOpenPaymentsModal(clientObj);
                                 }}
-                                className="p-1 text-red-500 hover:text-red-600 hover:bg-red-50 rounded border border-red-200 transition inline-block"
-                                title="Delete Payment"
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 rounded-full text-[11px] font-bold transition-all whitespace-nowrap inline-block text-center shadow-sm"
+                                title="Quick View Payments"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                Payments
                               </button>
-                            )}
+                              {role === "admin" && (
+                                <button
+                                  onClick={async () => {
+                                    if (confirm("Are you sure you want to delete this payment record?")) {
+                                      try {
+                                        await deleteDoc(doc(db, "payments", pay.id));
+                                        alert("Payment record deleted successfully!");
+                                      } catch (err) {
+                                        alert("Error: " + err.message);
+                                      }
+                                    }
+                                  }}
+                                  className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-all"
+                                  title="Delete Payment"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -2301,6 +2513,95 @@ export default function FinancePage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Payments Log Modal */}
+        {selectedClientForPayments && (
+          <div className="fixed inset-0 bg-sky-950/40 backdrop-blur-xs flex items-center justify-center z-[2000] p-4">
+            <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-sky-100 flex flex-col max-h-[90vh]">
+              {/* Modal Header */}
+              <div className="p-6 bg-sky-50/20 border-b border-sky-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sky-600 text-sm">Payments Log</h3>
+                  <p className="text-[10px] text-sky-400 font-semibold mt-0.5">{selectedClientForPayments.businessName}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedClientForPayments(null);
+                    setClientPayments([]);
+                  }}
+                  className="p-1.5 text-sky-400 hover:bg-sky-50 rounded-xl transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto min-h-[150px]">
+                {clientPayments.length === 0 ? (
+                  <div className="p-12 text-center text-sky-400 text-xs font-semibold">
+                    No individual payment records found for this client.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-sky-100 rounded-2xl">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                          <th className="p-3 px-4">Date</th>
+                          <th className="p-3 px-4">Invoice / Reference</th>
+                          <th className="p-3 px-4">Method</th>
+                          <th className="p-3 px-4">Notes</th>
+                          <th className="p-3 px-4 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sky-600 font-semibold divide-y divide-sky-100">
+                        {[...clientPayments]
+                          .sort((a, b) => (b.dateReceived || "").localeCompare(a.dateReceived || ""))
+                          .map((pay) => (
+                            <tr key={pay.id} className="hover:bg-sky-50/5">
+                              <td className="p-3 px-4 whitespace-nowrap">{pay.dateReceived}</td>
+                              <td className="p-3 px-4 font-bold">{pay.invoiceId}</td>
+                              <td className="p-3 px-4 capitalize">
+                                {pay.isOutstanding ? (
+                                  <span className="text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-[10px] font-bold">Outstanding</span>
+                                ) : (
+                                  pay.method || "Other"
+                                )}
+                              </td>
+                              <td className="p-3 px-4 text-sky-400 font-medium max-w-[150px] truncate" title={pay.notes}>
+                                {pay.notes || "None"}
+                              </td>
+                              {pay.isOutstanding ? (
+                                <td className="p-3 px-4 text-right text-amber-500 font-bold whitespace-nowrap">
+                                  Due: ${Number(pay.balance).toLocaleString()}
+                                </td>
+                              ) : (
+                                <td className="p-3 px-4 text-right text-emerald-600 font-bold whitespace-nowrap">
+                                  +${Number(pay.amount).toLocaleString()}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-sky-50/10 border-t border-sky-100 flex justify-end">
+                <button
+                  onClick={() => {
+                    setSelectedClientForPayments(null);
+                    setClientPayments([]);
+                  }}
+                  className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                >
+                  Close Logs
+                </button>
+              </div>
             </div>
           </div>
         )}

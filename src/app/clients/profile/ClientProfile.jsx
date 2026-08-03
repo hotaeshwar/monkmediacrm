@@ -57,6 +57,7 @@ export default function ClientProfilePage() {
   const [editRowData, setEditRowData] = useState(null);
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [contentList, setContentList] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
@@ -291,6 +292,15 @@ export default function ClientProfilePage() {
           }
         );
 
+        const unsubPayments = onSnapshot(
+          collection(db, "payments"),
+          (snap) => {
+            const list = [];
+            snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+            setPayments(list);
+          }
+        );
+
         const unsubContent = onSnapshot(
           query(collection(db, "content"), where("clientId", "==", id)),
           (snap) => {
@@ -315,6 +325,7 @@ export default function ClientProfilePage() {
           unsubChecklist();
           unsubProjects();
           unsubInvoices();
+          unsubPayments();
           unsubContent();
           unsubDocs();
         };
@@ -327,6 +338,73 @@ export default function ClientProfilePage() {
 
     fetchClientData();
   }, [currentUser, role, authLoading, id]);
+
+  const primaryInvoiceNumber = React.useMemo(() => {
+    if (invoices && invoices.length > 0) {
+      const firstInv = invoices.find((inv) => inv.invoiceNumber);
+      if (firstInv) return firstInv.invoiceNumber;
+    }
+    return "INV-WEB-856502";
+  }, [invoices]);
+
+  const synthesizedProjectInvoices = React.useMemo(() => {
+    return projects.map((proj) => {
+      const realInv = invoices.find((inv) => inv.projectId === proj.id);
+      const taxRate = client?.financials?.taxRate ?? 13;
+      const baseVal = Number(proj.value) || 0;
+      const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
+      const total = baseVal + tax;
+      const status = proj.status === "Completed" ? "Paid" : "Due";
+
+      return {
+        id: realInv?.id || `sim-inv-${proj.id}`,
+        invoiceNumber: realInv?.invoiceNumber || primaryInvoiceNumber,
+        invoiceDate: realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
+        dueDate: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
+        amount: baseVal,
+        tax,
+        total,
+        amountPaid: status === "Paid" ? total : 0,
+        balance: status === "Paid" ? 0 : total,
+        status,
+        projectId: proj.id,
+        projectName: proj.name,
+        realInvoiceId: realInv?.id || null
+      };
+    });
+  }, [projects, invoices, client, primaryInvoiceNumber]);
+
+  const clientPayments = React.useMemo(() => {
+    const list = [];
+    synthesizedProjectInvoices.forEach((inv) => {
+      if (inv.status === "Paid") {
+        const realPay = payments.find((p) => p.invoiceId === inv.invoiceNumber && p.amount > 0);
+        list.push({
+          id: `pay-${inv.id}`,
+          invoiceId: inv.invoiceNumber,
+          clientId: id,
+          amount: inv.total,
+          dateReceived: realPay?.dateReceived || inv.invoiceDate,
+          method: realPay?.method || "",
+          notes: realPay?.notes || `Payment for Campaign: ${inv.projectName}`,
+          isOutstanding: false
+        });
+      } else {
+        list.push({
+          id: `pay-${inv.id}`,
+          invoiceId: inv.invoiceNumber,
+          clientId: id,
+          amount: 0,
+          dateReceived: inv.dueDate,
+          method: "",
+          notes: `Project Campaign: ${inv.projectName} (Unpaid)`,
+          isOutstanding: true,
+          balance: inv.total
+        });
+      }
+    });
+    return list;
+  }, [synthesizedProjectInvoices, id, client, payments]);
 
   if (authLoading || loading) {
     return <Loader fullPage={true} message="Loading client profile data..." />;
@@ -1277,9 +1355,6 @@ export default function ClientProfilePage() {
                           <div className="flex items-center gap-3">
                             <div className="text-right">
                               <p className="text-sky-500 font-bold">${Number(p.value).toLocaleString()}</p>
-                              <div className="w-[60px] bg-sky-50 rounded-full h-1 mt-1">
-                                <div className="bg-sky-500 h-1 rounded-full" style={{ width: `${p.progressPercent || 0}%` }}></div>
-                              </div>
                             </div>
                             {(role === "admin" || role === "manager") && (
                               <button
@@ -1676,7 +1751,6 @@ export default function ClientProfilePage() {
                       <th className="p-4 px-6">Type</th>
                       <th className="p-4 px-6">Status</th>
                       <th className="p-4 px-6">Billing Period</th>
-                      <th className="p-4 px-6">Progress</th>
                       <th className="p-4 px-6 text-right">Value</th>
                       <th className="p-4 px-6 text-right">Action</th>
                     </tr>
@@ -1684,7 +1758,7 @@ export default function ClientProfilePage() {
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
                     {projects.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-sky-400">
+                        <td colSpan={6} className="p-8 text-center text-sky-400">
                           No active projects found for this client.
                         </td>
                       </tr>
@@ -1701,11 +1775,7 @@ export default function ClientProfilePage() {
                           <td className="p-4 px-6">
                             {p.startDate ? p.startDate + " to " + (p.endDate || p.deadline) : (p.deadline || "None")}
                           </td>
-                          <td className="p-4 px-6">
-                            <div className="w-full bg-sky-50 rounded-full h-1.5 max-w-[80px]">
-                              <div className="bg-sky-500 h-1.5 rounded-full" style={{ width: `${p.progressPercent || 0}%` }}></div>
-                            </div>
-                          </td>
+
                           <td className="p-4 px-6 text-right">${Number(p.value).toLocaleString()}</td>
                           <td className="p-4 px-6 text-right">
                             {(role === "admin" || role === "manager") && (
@@ -1863,8 +1933,6 @@ export default function ClientProfilePage() {
                              />
                            </div>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
                               Status / Stage
@@ -1881,21 +1949,6 @@ export default function ClientProfilePage() {
                               ))}
                             </select>
                           </div>
-                          <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                              Progress ({editProjProgress}%)
-                            </label>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              step="5"
-                              value={editProjProgress}
-                              onChange={(e) => setEditProjProgress(Number(e.target.value))}
-                              className="w-full h-2 bg-sky-100 rounded-lg appearance-none cursor-pointer accent-sky-500 mt-3"
-                            />
-                          </div>
-                        </div>
 
                         <div>
                           <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
@@ -2368,14 +2421,14 @@ export default function ClientProfilePage() {
                         </tr>
                       </thead>
                       <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
-                        {invoices.length === 0 ? (
+                        {synthesizedProjectInvoices.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="p-8 text-center text-sky-400">
                               No invoices found.
                             </td>
                           </tr>
                         ) : (
-                          invoices.map((inv) => (
+                          synthesizedProjectInvoices.map((inv) => (
                             <tr key={inv.id} className="hover:bg-sky-50/5">
                               <td className="p-3 px-4 font-bold">{inv.invoiceNumber}</td>
                               <td className="p-3 px-4">{inv.invoiceDate}</td>
@@ -2396,14 +2449,43 @@ export default function ClientProfilePage() {
                                 {role !== "client" && inv.status !== "Received" && inv.status !== "Paid" && (
                                   <button
                                     onClick={async () => {
-                                      const invRef = doc(db, "invoices", inv.id);
-                                      await updateDoc(invRef, {
-                                        status: "Received",
-                                        amountPaid: inv.total,
-                                        balance: 0
-                                      });
+                                      try {
+                                        if (inv.realInvoiceId) {
+                                          await updateDoc(doc(db, "invoices", inv.realInvoiceId), {
+                                            status: "Received",
+                                            amountPaid: inv.total,
+                                            balance: 0
+                                          });
+                                        }
+                                        await updateDoc(doc(db, "projects", inv.projectId), {
+                                          status: "Completed"
+                                        });
+
+                                        await addDoc(collection(db, "payments"), {
+                                          invoiceId: inv.invoiceNumber,
+                                          clientId: id,
+                                          amount: inv.total,
+                                          dateReceived: new Date().toISOString().split("T")[0],
+                                          method: client?.financials?.paymentMethod || "Bank Transfer",
+                                          notes: `Payment for Campaign: ${inv.projectName}`
+                                        });
+
+                                        const clientRef = doc(db, "clients", id);
+                                        const clientDoc = await getDoc(clientRef);
+                                        if (clientDoc.exists()) {
+                                          const clientData = clientDoc.data();
+                                          const prevPaid = Number(clientData.financials?.totalPaid) || 0;
+                                          await updateDoc(clientRef, {
+                                            "financials.totalPaid": prevPaid + inv.total,
+                                            "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
+                                          });
+                                        }
+                                        alert("Invoice marked as Paid successfully!");
+                                      } catch (err) {
+                                        alert("Error updating status: " + err.message);
+                                      }
                                     }}
-                                    className="px-2 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded text-[10px] font-bold transition"
+                                    className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-full text-[10px] font-bold transition shadow-sm whitespace-nowrap inline-block text-center"
                                   >
                                     Mark Paid
                                   </button>
@@ -2411,6 +2493,66 @@ export default function ClientProfilePage() {
                               </td>
                             </tr>
                           ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Client Payments Received Table */}
+                <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden flex flex-col mt-6">
+                  <div className="p-4 bg-sky-50/20 border-b border-sky-100 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-sky-600">Client Payments Received</h3>
+                    <span className="text-[10px] text-sky-400 font-bold uppercase tracking-wider">
+                      Individual Transaction Logs
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-sky-50/10 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                          <th className="p-3 px-4">Date</th>
+                          <th className="p-3 px-4">Invoice / Reference</th>
+                          <th className="p-3 px-4">Method</th>
+                          <th className="p-3 px-4">Notes</th>
+                          <th className="p-3 px-4 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                        {clientPayments.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-sky-400">
+                              No payment logs found for this client.
+                            </td>
+                          </tr>
+                        ) : (
+                          [...clientPayments]
+                            .sort((a, b) => (b.dateReceived || "").localeCompare(a.dateReceived || ""))
+                            .map((pay) => (
+                              <tr key={pay.id} className="hover:bg-sky-50/5">
+                                <td className="p-3 px-4">{pay.dateReceived}</td>
+                                <td className="p-3 px-4 font-bold">
+                                  {pay.invoiceId}
+                                </td>
+                                <td className="p-3 px-4 capitalize">
+                                  {pay.isOutstanding ? (
+                                    <span className="text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-[10px] font-bold">Outstanding</span>
+                                  ) : (
+                                    pay.method || "Other"
+                                  )}
+                                </td>
+                                <td className="p-3 px-4 text-sky-400 font-medium">{pay.notes || "None"}</td>
+                                {pay.isOutstanding ? (
+                                  <td className="p-3 px-4 text-right text-amber-500 font-bold whitespace-nowrap">
+                                    Due: ${Number(pay.balance).toLocaleString()}
+                                  </td>
+                                ) : (
+                                  <td className="p-3 px-4 text-right text-emerald-600 font-bold whitespace-nowrap">
+                                    +${Number(pay.amount).toLocaleString()}
+                                  </td>
+                                )}
+                              </tr>
+                            ))
                         )}
                       </tbody>
                     </table>

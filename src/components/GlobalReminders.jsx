@@ -45,21 +45,9 @@ export default function GlobalReminders() {
   const [activeAlarm, setActiveAlarm] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [dismissedTaskAlarms, setDismissedTaskAlarms] = useState([]);
-  
   const [invoices, setInvoices] = useState([]);
   const [dismissedInvoiceAlarms, setDismissedInvoiceAlarms] = useState([]);
-
-  // Clear dismissed alarms on mount (page refresh) so reminders come properly
-  useEffect(() => {
-    setDismissedTaskAlarms([]);
-    setDismissedInvoiceAlarms([]);
-    try {
-      localStorage.removeItem("dismissed_task_alarms");
-      localStorage.removeItem("dismissed_invoice_alarms");
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
+  const [isAlarmsLoaded, setIsAlarmsLoaded] = useState(true);
 
   // Web Audio Context Autoplay Policy Unlock
   useEffect(() => {
@@ -156,34 +144,30 @@ export default function GlobalReminders() {
 
   // Monitor trigger times (Automatic Task & Invoice Alarms)
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (activeAlarm) return;
+    if (!isAlarmsLoaded || activeAlarm) return;
 
-      if (activeOverdueAlarms.length > 0) {
-        const pendingTask = activeOverdueAlarms[0];
-        setActiveAlarm({
-          id: `task-alarm-${pendingTask.id}`,
-          isTask: true,
-          taskId: pendingTask.id,
-          title: `Automatic Alarm: Pending Task Overdue!`,
-          triggerTime: pendingTask.dueDate,
-          notes: `Task "${pendingTask.name}" has an active pendency state (Not Completed or Cancelled) and its deadline of ${pendingTask.dueDate} is reached or passed.`
-        });
-      } else if (activeOverdueInvoiceAlarms.length > 0) {
-        const pendingInvoice = activeOverdueInvoiceAlarms[0];
-        setActiveAlarm({
-          id: `invoice-alarm-${pendingInvoice.id}`,
-          isInvoice: true,
-          invoiceId: pendingInvoice.id,
-          title: `Collection Alarm: Invoice Overdue!`,
-          triggerTime: pendingInvoice.dueDate,
-          notes: `Invoice #${pendingInvoice.invoiceNumber} for client "${pendingInvoice.clientName || 'General'}" has an outstanding balance of $${Number(pendingInvoice.balance).toLocaleString()} and exceeded its due date of ${pendingInvoice.dueDate}.`
-        });
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [activeOverdueAlarms, activeOverdueInvoiceAlarms, activeAlarm]);
+    if (activeOverdueAlarms.length > 0) {
+      const pendingTask = activeOverdueAlarms[0];
+      setActiveAlarm({
+        id: `task-alarm-${pendingTask.id}`,
+        isTask: true,
+        taskId: pendingTask.id,
+        title: `Automatic Alarm: Pending Task Overdue!`,
+        triggerTime: pendingTask.dueDate,
+        notes: `Task "${pendingTask.name}" has an active pendency state (Not Completed or Cancelled) and its deadline of ${pendingTask.dueDate} is reached or passed.`
+      });
+    } else if (activeOverdueInvoiceAlarms.length > 0) {
+      const pendingInvoice = activeOverdueInvoiceAlarms[0];
+      setActiveAlarm({
+        id: `invoice-alarm-${pendingInvoice.id}`,
+        isInvoice: true,
+        invoiceId: pendingInvoice.id,
+        title: `Collection Alarm: Invoice Overdue!`,
+        triggerTime: pendingInvoice.dueDate,
+        notes: `Invoice #${pendingInvoice.invoiceNumber} for client "${pendingInvoice.clientName || 'General'}" has an outstanding balance of $${Number(pendingInvoice.balance).toLocaleString()} and exceeded its due date of ${pendingInvoice.dueDate}.`
+      });
+    }
+  }, [activeOverdueAlarms.length, activeOverdueInvoiceAlarms.length, activeAlarm, isAlarmsLoaded]);
 
   // Web Audio Alarm Chime Loop wrapped in safety handlers
   useEffect(() => {
@@ -244,18 +228,14 @@ export default function GlobalReminders() {
   };
 
   const handleDismissTask = (taskId) => {
-    const nextDismissed = [...dismissedTaskAlarms, taskId];
-    setDismissedTaskAlarms(nextDismissed);
-    localStorage.setItem("dismissed_task_alarms", JSON.stringify(nextDismissed));
+    setDismissedTaskAlarms((prev) => [...prev, taskId]);
     if (activeAlarm && activeAlarm.taskId === taskId) {
       setActiveAlarm(null);
     }
   };
 
   const handleDismissInvoice = (invoiceId) => {
-    const nextDismissed = [...dismissedInvoiceAlarms, invoiceId];
-    setDismissedInvoiceAlarms(nextDismissed);
-    localStorage.setItem("dismissed_invoice_alarms", JSON.stringify(nextDismissed));
+    setDismissedInvoiceAlarms((prev) => [...prev, invoiceId]);
     if (activeAlarm && activeAlarm.invoiceId === invoiceId) {
       setActiveAlarm(null);
     }
@@ -264,8 +244,6 @@ export default function GlobalReminders() {
   const handleClearDismissed = () => {
     setDismissedTaskAlarms([]);
     setDismissedInvoiceAlarms([]);
-    localStorage.removeItem("dismissed_task_alarms");
-    localStorage.removeItem("dismissed_invoice_alarms");
   };
 
   if (!currentUser) return null;

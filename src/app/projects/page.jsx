@@ -675,7 +675,6 @@ export default function ProjectsPage() {
                     <th className="p-4 px-6">Type</th>
                     <th className="p-4 px-6">Billing Period</th>
                     <th className="p-4 px-6">Value</th>
-                    <th className="p-4 px-6">Progress</th>
                     <th className="p-4 px-6 text-right">Status</th>
                   </tr>
                 </thead>
@@ -694,14 +693,7 @@ export default function ProjectsPage() {
                           <span className="text-[10px] text-sky-500 font-bold ml-1 uppercase">(Retainer)</span>
                         )}
                       </td>
-                      <td className="p-4.5 px-6">
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 bg-sky-50 rounded-full h-1.5">
-                            <div className="bg-sky-500 h-1.5 rounded-full" style={{ width: `${p.progressPercent || 0}%` }}></div>
-                          </div>
-                          <span>{p.progressPercent || 0}%</span>
-                        </div>
-                      </td>
+
                       <td className="p-4.5 px-6 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <select
@@ -812,23 +804,7 @@ export default function ProjectsPage() {
                             </p>
                           </div>
                           
-                          {/* Progress */}
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between text-[8px] font-extrabold text-sky-400 uppercase tracking-wide">
-                              <span className="flex items-center gap-1">
-                                {p.status === "Completed" ? (
-                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
-                                ) : (
-                                  <Activity className="w-2.5 h-2.5 text-sky-400" />
-                                )}
-                                Progress
-                              </span>
-                              <span>{p.progressPercent || 0}%</span>
-                            </div>
-                            <div className="w-full bg-sky-50/60 rounded-full h-1.5 border border-sky-50/20">
-                              <div className={`h-1.5 rounded-full transition-all duration-500 ${p.status === "Completed" ? "bg-emerald-500" : "bg-sky-500"}`} style={{ width: `${p.progressPercent || 0}%` }}></div>
-                            </div>
-                          </div>
+
 
                           {/* Date Range */}
                           <div className="flex items-center gap-1 text-[8px] text-sky-400 font-semibold bg-sky-50/20 p-1.5 rounded-xl border border-sky-50/30">
@@ -1239,37 +1215,21 @@ export default function ProjectsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                        Status / Stage
-                      </label>
-                      <select
-                        value={editProjStatus}
-                        onChange={(e) => setEditProjStatus(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none text-sky-600"
-                      >
-                        {stages.map((stg) => (
-                          <option key={stg} value={stg}>
-                            {stg}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
-                        Progress ({editProjProgress}%)
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="5"
-                        value={editProjProgress}
-                        onChange={(e) => setEditProjProgress(Number(e.target.value))}
-                        className="w-full h-2 bg-sky-100 rounded-lg appearance-none cursor-pointer accent-sky-500 mt-3"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-1.5">
+                      Status / Stage
+                    </label>
+                    <select
+                      value={editProjStatus}
+                      onChange={(e) => setEditProjStatus(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-sky-100 rounded-2xl text-xs outline-none text-sky-600 font-semibold"
+                    >
+                      {stages.map((stg) => (
+                        <option key={stg} value={stg}>
+                          {stg}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>

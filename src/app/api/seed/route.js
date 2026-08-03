@@ -223,6 +223,7 @@ export async function GET() {
     // 6. Seed Fake Payments
     await adminDb.collection("payments").add({
       invoiceId: inv1Id,
+      clientId: client1Id,
       amount: 17035.88,
       dateReceived: "2026-07-20",
       method: "Bank Transfer",

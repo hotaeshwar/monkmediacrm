@@ -7,7 +7,7 @@ import { collection, getDocs, addDoc, doc, setDoc } from "firebase/firestore";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { KeyRound, ShieldAlert, UserCheck, Plus, Check, Copy, Key } from "lucide-react";
+import { KeyRound, ShieldAlert, UserCheck, Plus, Check, Copy, Key, X } from "lucide-react";
 import Loader from "@/components/Loader";
 
 const WhatsAppIcon = () => (
@@ -585,33 +585,57 @@ Please keep these credentials secure.`;
           {/* Client Multi-select Area */}
           {userRole !== "client" && (
             <div className="pt-4 border-t border-sky-50">
-              <h3 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-3">
+              <label className="block text-xs font-bold uppercase tracking-wider text-sky-500 mb-2">
                 Assign Scoped Clients
-              </h3>
+              </label>
               {clients.length === 0 ? (
                 <p className="text-xs text-sky-400">
                   No clients exist in the database. You can assign clients to this user later.
                 </p>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {clients.map((c) => {
-                    const isChecked = selectedClients.includes(c.id);
-                    return (
-                      <button
-                        type="button"
-                        key={c.id}
-                        onClick={() => handleClientToggle(c.id)}
-                        className={`p-3 rounded-2xl text-left border text-xs font-semibold transition-all duration-200 flex items-center justify-between ${
-                          isChecked
-                            ? "bg-sky-50 border-sky-200 text-sky-600"
-                            : "bg-white border-sky-100 text-sky-500 hover:bg-sky-50/20"
-                        }`}
-                      >
-                        <span className="truncate pr-2">{c.businessName}</span>
-                        {isChecked && <Plus className="w-3.5 h-3.5 text-sky-600 flex-shrink-0 transform rotate-45" />}
-                      </button>
-                    );
-                  })}
+                <div className="space-y-3">
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val && !selectedClients.includes(val)) {
+                        setSelectedClients([...selectedClients, val]);
+                      }
+                    }}
+                    className="w-full max-w-md px-4 py-2.5 bg-white border border-sky-100 focus:border-sky-300 focus:ring-1 focus:ring-sky-300 rounded-2xl text-sm text-sky-600 outline-none transition-all duration-200"
+                  >
+                    <option value="">-- Choose Client to Assign --</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.businessName}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Selected Client Chips */}
+                  {selectedClients.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1.5">
+                      {selectedClients.map((clientId) => {
+                        const clientName = clients.find((c) => c.id === clientId)?.businessName || "Unknown Client";
+                        return (
+                          <div
+                            key={clientId}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 border border-sky-100 text-sky-600 rounded-full text-xs font-semibold shadow-xs"
+                          >
+                            <span>{clientName}</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedClients(selectedClients.filter((id) => id !== clientId))}
+                              className="text-sky-400 hover:text-red-500 focus:outline-none transition-colors"
+                              title="Remove Assignment"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
