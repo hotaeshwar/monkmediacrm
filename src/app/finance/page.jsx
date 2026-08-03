@@ -533,9 +533,9 @@ export default function FinancePage() {
 
     setEditInvDue(inv.dueDate || "");
     setEditInvDescription(inv.description || "Software and App Development");
-    setEditInvClientName(cl?.businessName || inv.clientName || "");
-    setEditInvClientAttention(cl?.contactPerson || inv.clientAttention || "");
-    setEditInvClientEmail(cl?.email || inv.clientEmail || "");
+    setEditInvClientName(inv.clientName || cl?.businessName || "");
+    setEditInvClientAttention(inv.clientAttention || cl?.contactPerson || "");
+    setEditInvClientEmail(inv.clientEmail || cl?.email || "");
     setEditInvCraNumber(inv.craNumber || "");
     setEditInvHstNumber(inv.hstNumber || "");
     setEditInvFromCompany(inv.fromCompanyName || "14689941 Canada Inc.");
@@ -968,7 +968,7 @@ export default function FinancePage() {
       pdfDoc.line(leftMargin + contentWidth - 65, yPos + 1, leftMargin + contentWidth, yPos + 1);
 
       yPos += 9;
-      const balanceVal = Number(inv.balance) ?? (total - (Number(inv.amountPaid) || 0));
+      const balanceVal = Math.max(0, total - (Number(inv.amountPaid) || 0));
       if (balanceVal <= 0) {
         pdfDoc.setTextColor(22, 163, 74); // Green
         pdfDoc.setFont("helvetica", "bold");
