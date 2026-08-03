@@ -1517,7 +1517,6 @@ export default function FinancePage() {
                   <thead>
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                       <th className="p-4 px-6">Client</th>
-                      <th className="p-4 px-6">Invoice ID</th>
                       <th className="p-4 px-6">Date Received</th>
                       <th className="p-4 px-6">Payment Method</th>
                       <th className="p-4 px-6">Notes</th>
@@ -1528,7 +1527,7 @@ export default function FinancePage() {
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
                     {filteredPayments.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-sky-400 font-medium">
+                        <td colSpan={6} className="p-8 text-center text-sky-400 font-medium">
                           No payments processed for this period.
                         </td>
                       </tr>
@@ -1543,9 +1542,6 @@ export default function FinancePage() {
                                   : getClientName(invoices.find((i) => i.id === pay.invoiceId)?.clientId)}
                               </span>
                             </div>
-                          </td>
-                          <td className="p-4 px-6 text-sky-400">
-                            {pay.invoiceId ? `Ref ID: ${pay.invoiceId.substring(0, 8)}...` : "None"}
                           </td>
                           <td className="p-4 px-6">{pay.dateReceived}</td>
                           <td className="p-4 px-6 capitalize">{pay.method}</td>
