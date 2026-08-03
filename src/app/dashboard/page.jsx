@@ -254,16 +254,17 @@ export default function Dashboard() {
 
   const allSynthesizedInvoices = React.useMemo(() => {
     const list = [];
+    const matchedRealInvoiceIds = new Set();
+
     clients.forEach((cl) => {
       const clientProjs = projects.filter((p) => p.clientId === cl.id);
       const clientInvs = invoices.filter((i) => i.clientId === cl.id);
       
-      const primaryInvNum = clientInvs.length > 0
-        ? (clientInvs.find((inv) => inv.invoiceNumber)?.invoiceNumber || "INV-WEB-856502")
-        : "INV-WEB-856502";
-
       clientProjs.forEach((proj) => {
         const realInv = clientInvs.find((inv) => inv.projectId === proj.id);
+        if (realInv) {
+          matchedRealInvoiceIds.add(realInv.id);
+        }
         const taxRate = cl.financials?.taxRate ?? 13;
         const baseVal = Number(proj.value) || 0;
         const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
@@ -276,12 +277,12 @@ export default function Dashboard() {
 
         list.push({
           id: realInv?.id || `sim-inv-${proj.id}`,
-          invoiceNumber: realInv?.invoiceNumber || primaryInvNum,
+          invoiceNumber: realInv?.invoiceNumber || `MM-SIM-${proj.id.substring(0, 6).toUpperCase()}`,
           invoiceDate: realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
           dueDate: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
-          amount: baseVal,
-          tax,
-          total,
+          amount: realInv?.amount || baseVal,
+          tax: realInv?.tax || tax,
+          total: realInv?.total || total,
           amountPaid,
           balance,
           status,
@@ -291,6 +292,30 @@ export default function Dashboard() {
           clientAttention: cl.contactPerson || "",
           clientEmail: cl.email || "",
           realInvoiceId: realInv?.id || null,
+          clientId: cl.id
+        });
+      });
+
+      // Include standalone/manual invoices not linked to any projects
+      const unmatchedInvs = clientInvs.filter((inv) => !matchedRealInvoiceIds.has(inv.id));
+      unmatchedInvs.forEach((realInv) => {
+        list.push({
+          id: realInv.id,
+          invoiceNumber: realInv.invoiceNumber || `MM-MAN-${realInv.id.substring(0, 6).toUpperCase()}`,
+          invoiceDate: realInv.invoiceDate || new Date().toISOString().split("T")[0],
+          dueDate: realInv.dueDate || new Date().toISOString().split("T")[0],
+          amount: realInv.amount || 0,
+          tax: realInv.tax || 0,
+          total: realInv.total || 0,
+          amountPaid: Number(realInv.amountPaid) || 0,
+          balance: Number(realInv.balance) || 0,
+          status: realInv.status || "Due",
+          projectId: realInv.projectId || "",
+          projectName: realInv.projectName || realInv.description || "Manual Invoice",
+          clientName: cl.businessName,
+          clientAttention: cl.contactPerson || "",
+          clientEmail: cl.email || "",
+          realInvoiceId: realInv.id,
           clientId: cl.id
         });
       });

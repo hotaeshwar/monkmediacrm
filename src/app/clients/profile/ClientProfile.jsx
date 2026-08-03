@@ -362,17 +362,15 @@ export default function ClientProfilePage() {
     };
   }, [currentUser, authLoading, id]);
 
-  const primaryInvoiceNumber = React.useMemo(() => {
-    if (invoices && invoices.length > 0) {
-      const firstInv = invoices.find((inv) => inv.invoiceNumber);
-      if (firstInv) return firstInv.invoiceNumber;
-    }
-    return "INV-WEB-856502";
-  }, [invoices]);
-
   const synthesizedProjectInvoices = React.useMemo(() => {
-    return projects.map((proj) => {
+    const list = [];
+    const matchedRealInvoiceIds = new Set();
+
+    projects.forEach((proj) => {
       const realInv = invoices.find((inv) => inv.projectId === proj.id);
+      if (realInv) {
+        matchedRealInvoiceIds.add(realInv.id);
+      }
       const taxRate = client?.financials?.taxRate ?? 13;
       const baseVal = Number(proj.value) || 0;
       const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
@@ -383,23 +381,46 @@ export default function ClientProfilePage() {
       const balance = realInv ? (Number(realInv.balance) ?? (total - amountPaid)) : (proj.status === "Completed" ? 0 : total);
       const status = realInv ? (realInv.status || (balance <= 0 ? "Received" : "Due")) : (proj.status === "Completed" ? "Received" : "Due");
 
-      return {
+      list.push({
         id: realInv?.id || `sim-inv-${proj.id}`,
-        invoiceNumber: realInv?.invoiceNumber || primaryInvoiceNumber,
+        invoiceNumber: realInv?.invoiceNumber || `MM-SIM-${proj.id.substring(0, 6).toUpperCase()}`,
         invoiceDate: realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
         dueDate: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
-        amount: baseVal,
-        tax,
-        total,
+        amount: realInv?.amount || baseVal,
+        tax: realInv?.tax || tax,
+        total: realInv?.total || total,
         amountPaid,
         balance,
         status,
         projectId: proj.id,
         projectName: proj.name,
         realInvoiceId: realInv?.id || null
-      };
+      });
     });
-  }, [projects, invoices, client, primaryInvoiceNumber]);
+
+    // Add unmatched client invoices (that don't have project associations)
+    invoices.forEach((realInv) => {
+      if (!matchedRealInvoiceIds.has(realInv.id)) {
+        list.push({
+          id: realInv.id,
+          invoiceNumber: realInv.invoiceNumber || `MM-MAN-${realInv.id.substring(0, 6).toUpperCase()}`,
+          invoiceDate: realInv.invoiceDate || new Date().toISOString().split("T")[0],
+          dueDate: realInv.dueDate || new Date().toISOString().split("T")[0],
+          amount: realInv.amount || 0,
+          tax: realInv.tax || 0,
+          total: realInv.total || 0,
+          amountPaid: Number(realInv.amountPaid) || 0,
+          balance: Number(realInv.balance) || 0,
+          status: realInv.status || "Due",
+          projectId: realInv.projectId || "",
+          projectName: realInv.projectName || realInv.description || "Manual Invoice",
+          realInvoiceId: realInv.id
+        });
+      }
+    });
+
+    return list;
+  }, [projects, invoices, client]);
 
   const clientPayments = React.useMemo(() => {
     const list = [];
