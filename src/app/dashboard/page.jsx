@@ -73,6 +73,7 @@ export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [payouts, setPayouts] = useState([]);
   const [users, setUsers] = useState([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -97,10 +98,11 @@ export default function Dashboard() {
     let loadedLeads = role !== "admin" && role !== "manager";
     let loadedInvoices = role !== "admin" && role !== "manager";
     let loadedExpenses = role !== "admin" && role !== "manager";
+    let loadedPayouts = role !== "admin" && role !== "manager";
     let loadedUsers = false;
 
     const checkAllLoaded = () => {
-      if (loadedClients && loadedProjects && loadedTasks && loadedLeads && loadedInvoices && loadedExpenses && loadedUsers) {
+      if (loadedClients && loadedProjects && loadedTasks && loadedLeads && loadedInvoices && loadedExpenses && loadedPayouts && loadedUsers) {
         setLoading(false);
       }
     };
@@ -156,6 +158,7 @@ export default function Dashboard() {
     let unsubLeads = () => {};
     let unsubInvoices = () => {};
     let unsubExpenses = () => {};
+    let unsubPayouts = () => {};
 
     if (role === "admin" || role === "manager") {
       unsubLeads = onSnapshot(collection(db, "leads"), (snap) => {
@@ -193,6 +196,18 @@ export default function Dashboard() {
         loadedExpenses = true;
         checkAllLoaded();
       });
+
+      unsubPayouts = onSnapshot(collection(db, "payouts"), (snap) => {
+        const list = [];
+        snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+        setPayouts(list);
+        loadedPayouts = true;
+        checkAllLoaded();
+      }, (err) => {
+        console.error("Payouts sync error:", err);
+        loadedPayouts = true;
+        checkAllLoaded();
+      });
     }
 
     return () => {
@@ -202,6 +217,7 @@ export default function Dashboard() {
       unsubLeads();
       unsubInvoices();
       unsubExpenses();
+      unsubPayouts();
       unsubUsers();
     };
   }, [currentUser, role, authLoading]);
@@ -236,11 +252,57 @@ export default function Dashboard() {
     return false;
   });
 
-  const scopedInvoices = invoices.filter((inv) => {
-    if (role === "admin") return true;
-    if (role === "manager") return scopedClients.some((c) => c.id === inv.clientId);
-    return false;
-  });
+  const allSynthesizedInvoices = React.useMemo(() => {
+    const list = [];
+    clients.forEach((cl) => {
+      const clientProjs = projects.filter((p) => p.clientId === cl.id);
+      const clientInvs = invoices.filter((i) => i.clientId === cl.id);
+      
+      const primaryInvNum = clientInvs.length > 0
+        ? (clientInvs.find((inv) => inv.invoiceNumber)?.invoiceNumber || "INV-WEB-856502")
+        : "INV-WEB-856502";
+
+      clientProjs.forEach((proj) => {
+        const realInv = clientInvs.find((inv) => inv.projectId === proj.id);
+        const taxRate = cl.financials?.taxRate ?? 13;
+        const baseVal = Number(proj.value) || 0;
+        const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
+        const total = baseVal + tax;
+
+        // Respect real invoice values if they exist
+        const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? total : 0);
+        const balance = realInv ? (Number(realInv.balance) ?? (total - amountPaid)) : (proj.status === "Completed" ? 0 : total);
+        const status = realInv ? (realInv.status || (balance <= 0 ? "Received" : "Due")) : (proj.status === "Completed" ? "Received" : "Due");
+
+        list.push({
+          id: realInv?.id || `sim-inv-${proj.id}`,
+          invoiceNumber: realInv?.invoiceNumber || primaryInvNum,
+          invoiceDate: realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
+          dueDate: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
+          amount: baseVal,
+          tax,
+          total,
+          amountPaid,
+          balance,
+          status,
+          projectId: proj.id,
+          projectName: proj.name,
+          clientName: cl.businessName,
+          clientAttention: cl.contactPerson || "",
+          clientEmail: cl.email || "",
+          realInvoiceId: realInv?.id || null,
+          clientId: cl.id
+        });
+      });
+    });
+    return list;
+  }, [invoices, projects, clients]);
+
+  const scopedInvoices = React.useMemo(() => {
+    const list = allSynthesizedInvoices;
+    if (role === "admin") return list;
+    return list.filter((inv) => scopedClients.some((c) => c.id === inv.clientId));
+  }, [allSynthesizedInvoices, role, scopedClients]);
 
   const scopedExpenses = expenses.filter((exp) => {
     if (role === "admin") return true;
@@ -306,7 +368,7 @@ export default function Dashboard() {
   let outstandingPayments = 0;
   let overduePayments = 0;
   let monthlyExpenses = 0;
-  let additionalInvoicesRevenue = 0;
+  let totalBilledPeriod = 0;
 
   // Retainer metrics
   let retainerAdded = 0;
@@ -331,65 +393,45 @@ export default function Dashboard() {
 
     mrr = clientRetainersSum + projectRetainersSum;
 
-    // Revenue received in period: Invoices paid in range
-    revenueReceivedThisMonth = scopedInvoices.reduce((acc, inv) => {
-      if (inv.status !== "Paid" && inv.status !== "Received" && (Number(inv.amountPaid) || 0) <= 0) return acc;
-      const dateStr = inv.invoiceDate || inv.dueDate;
-      if (dateStr && (!dateFrom || dateStr >= dateFrom) && (!dateTo || dateStr <= dateTo)) {
-        return acc + (Number(inv.amountPaid) || 0);
-      }
-      return acc;
-    }, 0);
+    // Filter scoped data by date range if selected (exactly like Finance page)
+    const filteredInvoices = scopedInvoices.filter((inv) => {
+      if (!inv.invoiceDate) return false;
+      return (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo);
+    });
 
-    // Additional manual/project invoices created in range (excluding recurring ones)
-    additionalInvoicesRevenue = scopedInvoices.reduce((acc, inv) => {
-      if (inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo)) {
-        const isRecurring = String(inv.invoiceNumber || "").startsWith("REC-") || String(inv.notes || "").toLowerCase().includes("recurring");
-        if (!isRecurring) {
-          return acc + (Number(inv.amount) || 0);
-        }
-      }
-      return acc;
-    }, 0);
+    const filteredExpenses = scopedExpenses.filter((exp) => {
+      if (!exp.date) return false;
+      return (!dateFrom || exp.date >= dateFrom) && (!dateTo || exp.date <= dateTo);
+    });
 
-    // Outstanding payments for range
-    outstandingPayments = scopedInvoices.reduce((acc, inv) => {
-      const status = inv.status || "Due";
-      if (status === "Paid" || status === "Received") return acc;
-      if (inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo)) {
+    const filteredPayouts = payouts.filter((p) => {
+      if (!p.date) return false;
+      return (!dateFrom || p.date >= dateFrom) && (!dateTo || p.date <= dateTo);
+    });
+
+    totalBilledPeriod = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
+    revenueReceivedThisMonth = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
+    outstandingPayments = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
+
+    overduePayments = filteredInvoices.reduce((acc, inv) => {
+      if (inv.status !== "Received" && inv.status !== "Paid" && inv.dueDate < todayStr) {
         return acc + (Number(inv.balance) || 0);
       }
       return acc;
     }, 0);
 
-    // Overdue payments for range
-    overduePayments = scopedInvoices.reduce((acc, inv) => {
-      const status = inv.status || "Due";
-      if (status !== "Paid" && status !== "Received" && inv.dueDate < todayStr) {
-        if (inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo)) {
-          return acc + (Number(inv.balance) || 0);
-        }
-      }
-      return acc;
-    }, 0);
-
-    // Expenses in range
-    monthlyExpenses = scopedExpenses.reduce((acc, exp) => {
-      if (exp.date && (!dateFrom || exp.date >= dateFrom) && (!dateTo || exp.date <= dateTo)) {
-        return acc + (Number(exp.amount) || 0);
-      }
-      return acc;
-    }, 0);
+    monthlyExpenses = filteredExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0) +
+                      filteredPayouts.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
 
     // Calculate retainer metrics for range
-    const retainerInvoices = scopedInvoices.filter(inv => inv.invoiceDate && (!dateFrom || inv.invoiceDate >= dateFrom) && (!dateTo || inv.invoiceDate <= dateTo) && isRetainerInvoice(inv));
+    const retainerInvoices = filteredInvoices.filter(inv => isRetainerInvoice(inv));
     retainerAdded = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
     retainerReceived = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
     retainerDue = retainerInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
   }
 
   const estimatedProfit = (role === "admin" || role === "manager")
-    ? (mrr + additionalInvoicesRevenue) - monthlyExpenses
+    ? revenueReceivedThisMonth - monthlyExpenses
     : 0;
 
   // 3. Chart Data Preparation
@@ -552,7 +594,7 @@ export default function Dashboard() {
               <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Monthly Retainers</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${mrr.toLocaleString()}</h3>
+                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${mrr.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
                   <p className="text-[10px] text-sky-400 mt-1 font-semibold">Active recurring value</p>
                 </div>
                 <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
@@ -564,8 +606,8 @@ export default function Dashboard() {
               <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Received This Month</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${revenueReceivedThisMonth.toLocaleString()}</h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Processed invoice total</p>
+                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${revenueReceivedThisMonth.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Processed billing totals</p>
                 </div>
                 <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
                   <Activity className="w-5 h-5" />
@@ -576,11 +618,11 @@ export default function Dashboard() {
               <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Total Outstanding</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${outstandingPayments.toLocaleString()}</h3>
+                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${outstandingPayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
                   {overduePayments > 0 ? (
                     <p className="text-[10px] text-red-500 mt-1 font-semibold flex items-center gap-1">
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      ${overduePayments.toLocaleString()} overdue
+                      ${overduePayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} overdue
                     </p>
                   ) : (
                     <p className="text-[10px] text-sky-400 mt-1 font-semibold">All invoice balances</p>
@@ -596,9 +638,9 @@ export default function Dashboard() {
                 <div>
                   <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Estimated Profit</p>
                   <h3 className={`text-2xl font-bold mt-1 ${estimatedProfit >= 0 ? "text-sky-600" : "text-red-500"}`}>
-                    ${estimatedProfit.toLocaleString()}
+                    ${estimatedProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                   </h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Expenses: ${monthlyExpenses.toLocaleString()}</p>
+                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Expenses: ${monthlyExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                 </div>
                 <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
                   <CalendarCheck className="w-5 h-5" />

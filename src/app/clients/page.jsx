@@ -1049,7 +1049,6 @@ export default function ClientsPage() {
                       <thead>
                         <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                           <th className="p-3 px-4">Date</th>
-                          <th className="p-3 px-4">Invoice / Reference</th>
                           <th className="p-3 px-4">Method</th>
                           <th className="p-3 px-4">Notes</th>
                           <th className="p-3 px-4 text-right">Amount</th>
@@ -1061,7 +1060,6 @@ export default function ClientsPage() {
                           .map((pay) => (
                             <tr key={pay.id} className="hover:bg-sky-50/5">
                               <td className="p-3 px-4 whitespace-nowrap">{pay.dateReceived}</td>
-                              <td className="p-3 px-4 font-bold">{pay.invoiceId}</td>
                               <td className="p-3 px-4 capitalize">
                                 {pay.isOutstanding ? (
                                   <span className="text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-[10px] font-bold">Outstanding</span>

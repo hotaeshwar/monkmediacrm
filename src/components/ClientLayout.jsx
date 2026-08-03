@@ -7,6 +7,7 @@ import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
 import GlobalReminders from "@/components/GlobalReminders";
 import GlobalPayments from "@/components/GlobalPayments";
+import { RefreshCw, DollarSign, Bell } from "lucide-react";
 
 function RouteGuard({ children }) {
   const { currentUser, role, clientId, loading } = useAuth();
@@ -51,6 +52,12 @@ export default function ClientLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Auto-collapse sidebar on smaller screens
   useEffect(() => {
@@ -172,7 +179,7 @@ export default function ClientLayout({ children }) {
           showSplash ? "opacity-0 overflow-hidden h-screen pointer-events-none" : "opacity-100"
         }`}
       >
-        {!isAuthPage && (
+        {mounted && !isAuthPage && (
           <Sidebar
             expanded={sidebarExpanded}
             setExpanded={setSidebarExpanded}
@@ -188,9 +195,57 @@ export default function ClientLayout({ children }) {
           <RouteGuard>{children}</RouteGuard>
         </main>
       </div>
-      {!isAuthPage && <GlobalSearch />}
-      {!isAuthPage && <GlobalReminders />}
-      {!isAuthPage && <GlobalPayments />}
+      {mounted && !isAuthPage && <GlobalSearch />}
+      {mounted && !isAuthPage && <GlobalReminders />}
+      {mounted && !isAuthPage && <GlobalPayments />}
+
+      {mounted && !isAuthPage && (
+        <div className="fixed bottom-6 right-6 z-[999] flex flex-col items-center gap-3">
+          {/* Expanded Speed Dial Menu */}
+          <div className={`flex flex-col items-center gap-3 transition-all duration-300 transform origin-bottom ${
+            quickActionsOpen ? "scale-100 opacity-100 translate-y-0" : "scale-75 opacity-0 translate-y-10 pointer-events-none"
+          }`}>
+            {/* Action: Quick Reminders */}
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent("toggle-global-reminders"));
+                setQuickActionsOpen(false);
+              }}
+              className="p-3 bg-gradient-to-r from-sky-400 to-[#348eab] text-white rounded-full shadow-lg hover:scale-110 transition-all duration-200 group relative"
+              title="Quick Reminders"
+            >
+              <Bell className="w-5 h-5 group-hover:animate-bounce" />
+              <span className="absolute right-14 top-2.5 px-2 py-1 bg-sky-950 text-white text-[9px] font-bold rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                Quick Reminders
+              </span>
+            </button>
+
+            {/* Action: Quick Record Payment */}
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent("toggle-global-payments"));
+                setQuickActionsOpen(false);
+              }}
+              className="p-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-full shadow-lg hover:scale-110 transition-all duration-200 group relative"
+              title="Quick Record Payment"
+            >
+              <DollarSign className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+              <span className="absolute right-14 top-2.5 px-2 py-1 bg-sky-950 text-white text-[9px] font-bold rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                Record Payment
+              </span>
+            </button>
+          </div>
+
+          {/* Main Quick Action Circular Button */}
+          <button
+            onClick={() => setQuickActionsOpen(!quickActionsOpen)}
+            className="p-2.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-500 rounded-full border border-sky-500/20 shadow-sm hover:scale-105 transition-all duration-300 flex items-center justify-center"
+            title="Quick Actions"
+          >
+            <RefreshCw className={`w-4 h-4 transition-transform duration-500 ${quickActionsOpen ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+      )}
 
       {/* Global Toast Container */}
       <div className="fixed top-6 right-6 z-[99999] flex flex-col gap-3 w-full max-w-sm pointer-events-none">

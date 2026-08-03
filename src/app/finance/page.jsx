@@ -15,6 +15,7 @@ export default function FinancePage() {
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [payouts, setPayouts] = useState([]);
 
   // Payments Log Modal States
   const [selectedClientForPayments, setSelectedClientForPayments] = useState(null);
@@ -195,6 +196,14 @@ export default function FinancePage() {
       setUsers(list);
     });
 
+    const unsubPayouts = onSnapshot(collection(db, "payouts"), (snap) => {
+      const list = [];
+      snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      setPayouts(list);
+    }, (err) => {
+      console.warn("Payouts sync error:", err);
+    });
+
     setLoading(false);
 
     return () => {
@@ -204,6 +213,7 @@ export default function FinancePage() {
       unsubExpenses();
       unsubPayments();
       unsubUsers();
+      unsubPayouts();
     };
   }, [currentUser, role]);
 
@@ -231,18 +241,22 @@ export default function FinancePage() {
         const baseVal = Number(proj.value) || 0;
         const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
         const total = baseVal + tax;
-        const status = proj.status === "Completed" ? "Received" : "Due";
+
+        // Respect real invoice values if they exist
+        const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? total : 0);
+        const balance = realInv ? (Number(realInv.balance) ?? (total - amountPaid)) : (proj.status === "Completed" ? 0 : total);
+        const status = realInv ? (realInv.status || (balance <= 0 ? "Received" : "Due")) : (proj.status === "Completed" ? "Received" : "Due");
 
         list.push({
           id: realInv?.id || `sim-inv-${proj.id}`,
-          invoiceNumber: primaryInvNum,
+          invoiceNumber: realInv?.invoiceNumber || primaryInvNum,
           invoiceDate: realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
           dueDate: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
           amount: baseVal,
           tax,
           total,
-          amountPaid: status === "Received" ? total : 0,
-          balance: status === "Received" ? 0 : total,
+          amountPaid,
+          balance,
           status,
           projectId: proj.id,
           projectName: proj.name,
@@ -270,33 +284,62 @@ export default function FinancePage() {
 
   const allSynthesizedPayments = React.useMemo(() => {
     const list = [];
+    
+    // 1. Add all actual payments
+    payments.forEach((pay) => {
+      const inv = allSynthesizedInvoices.find(
+        (i) => i.id === pay.invoiceId || i.invoiceNumber === pay.invoiceId
+      );
+      list.push({
+        id: pay.id,
+        invoiceId: pay.invoiceId,
+        clientId: pay.clientId || inv?.clientId,
+        amount: Number(pay.amount) || 0,
+        dateReceived: pay.dateReceived,
+        method: pay.method || "",
+        notes: pay.notes || (inv ? `Payment for Campaign: ${inv.projectName}` : "Manual Payment"),
+        isOutstanding: false
+      });
+    });
+
+    // 1.5. Add simulated payments for invoices with amountPaid > 0 but no actual payment record
     allSynthesizedInvoices.forEach((inv) => {
-      if (inv.status === "Received") {
-        const realPay = payments.find((p) => p.invoiceId === inv.invoiceNumber && p.amount > 0);
+      if (inv.amountPaid > 0) {
+        const hasActual = payments.some(
+          (pay) => pay.invoiceId === inv.id || pay.invoiceId === inv.invoiceNumber
+        );
+        if (!hasActual) {
+          list.push({
+            id: `sim-pay-${inv.id}`,
+            invoiceId: inv.id,
+            clientId: inv.clientId,
+            amount: inv.amountPaid,
+            dateReceived: inv.invoiceDate,
+            method: "Bank Transfer",
+            notes: `Payment for Campaign: ${inv.projectName}`,
+            isOutstanding: false
+          });
+        }
+      }
+    });
+
+    // 2. Add outstanding simulated invoices
+    allSynthesizedInvoices.forEach((inv) => {
+      if (inv.balance > 0) {
         list.push({
-          id: `pay-${inv.id}`,
-          invoiceId: inv.invoiceNumber,
-          clientId: inv.clientId,
-          amount: inv.total,
-          dateReceived: realPay?.dateReceived || inv.invoiceDate,
-          method: realPay?.method || "",
-          notes: realPay?.notes || `Payment for Campaign: ${inv.projectName}`,
-          isOutstanding: false
-        });
-      } else {
-        list.push({
-          id: `pay-${inv.id}`,
-          invoiceId: inv.invoiceNumber,
+          id: `outstanding-${inv.id}`,
+          invoiceId: inv.id,
           clientId: inv.clientId,
           amount: 0,
           dateReceived: inv.dueDate,
           method: "",
           notes: `Project Campaign: ${inv.projectName} (Unpaid)`,
           isOutstanding: true,
-          balance: inv.total
+          balance: inv.balance
         });
       }
     });
+
     return list;
   }, [allSynthesizedInvoices, payments]);
 
@@ -336,10 +379,16 @@ export default function FinancePage() {
     return (!dateFrom || pay.dateReceived >= dateFrom) && (!dateTo || pay.dateReceived <= dateTo);
   });
 
+  const filteredPayouts = payouts.filter((p) => {
+    if (!p.date) return false;
+    return (!dateFrom || p.date >= dateFrom) && (!dateTo || p.date <= dateTo);
+  });
+
   const totalBilling = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
   const totalReceived = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.amountPaid) || 0), 0);
   const totalOutstanding = filteredInvoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
-  const totalExpenses = filteredExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
+  const totalExpenses = filteredExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0) +
+                        filteredPayouts.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
   
   const totalOverdue = filteredInvoices.reduce((acc, inv) => {
     if (inv.status !== "Received" && inv.status !== "Paid" && inv.dueDate < todayStr) {
@@ -430,9 +479,14 @@ export default function FinancePage() {
     }
   };
 
+  const [editInvProjectId, setEditInvProjectId] = useState("");
+  const [editInvClientId, setEditInvClientId] = useState("");
+
   const handleStartEditInvoice = (inv) => {
     const cl = getClientObj(inv.clientId);
     setEditInvId(inv.id);
+    setEditInvProjectId(inv.projectId || "");
+    setEditInvClientId(inv.clientId || "");
     setEditInvNum(inv.invoiceNumber || "");
     setEditInvAmount(inv.amount || "");
     
@@ -466,7 +520,6 @@ export default function FinancePage() {
       const tax = Number(((amount * editInvTaxPercent) / 100).toFixed(2));
       const total = amount + tax;
       
-      const targetInvoice = invoices.find((i) => i.id === editInvId);
       const amountPaid = Number(editInvAmountPaid) || 0;
       const balance = Math.max(0, total - amountPaid);
       const status = balance <= 0 ? "Received" : amountPaid > 0 ? "Partial" : "Due";
@@ -489,9 +542,23 @@ export default function FinancePage() {
         fromCompanyName: editInvFromCompany || "14689941 Canada Inc.",
         fromBrandName: editInvFromBrand || "Operating as Monk Media",
         fromEmail: editInvFromEmail || "info@monkmedia.ca",
+        projectId: editInvProjectId || "",
+        clientId: editInvClientId || "",
       };
 
-      await updateDoc(doc(db, "invoices", editInvId), updatePayload);
+      if (editInvId.startsWith("sim-inv-")) {
+        await addDoc(collection(db, "invoices"), updatePayload);
+      } else {
+        await updateDoc(doc(db, "invoices", editInvId), updatePayload);
+      }
+
+      // Synchronize associated project/campaign status to Completed if fully paid
+      if (editInvProjectId && (status === "Received" || status === "Paid")) {
+        await updateDoc(doc(db, "projects", editInvProjectId), {
+          status: "Completed"
+        });
+      }
+
       setIsEditInvOpen(false);
       alert("Invoice updated successfully!");
     } catch (err) {
@@ -818,7 +885,7 @@ export default function FinancePage() {
       pdfDoc.setTextColor(17, 24, 39); // #111827
       pdfDoc.setFont("helvetica", "bold");
       pdfDoc.setFontSize(9);
-      pdfDoc.text(inv.description || inv.notes || "Software and App Development", leftMargin + 5, yPos + 7.5);
+      pdfDoc.text(inv.description || inv.projectName || inv.notes || "Software and App Development", leftMargin + 5, yPos + 7.5);
       pdfDoc.text(`$${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos + 7.5, { align: "right" });
 
       yPos += 22;
@@ -844,33 +911,38 @@ export default function FinancePage() {
       pdfDoc.line(leftMargin + contentWidth - 65, yPos + 1, leftMargin + contentWidth, yPos + 1);
 
       yPos += 8;
-      if (isPaid) {
-        pdfDoc.setTextColor(22, 163, 74); // #16a34a (green)
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(12);
-        pdfDoc.text("TOTAL PAID", leftMargin + contentWidth - 65, yPos);
-        pdfDoc.text(`$${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
-      } else if (isPartial) {
-        pdfDoc.setTextColor(107, 114, 128); // gray
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(9);
-        pdfDoc.text("TOTAL PAID", leftMargin + contentWidth - 65, yPos);
-        pdfDoc.setFont("helvetica", "normal");
-        pdfDoc.text(`$${(Number(inv.amountPaid) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+      pdfDoc.setTextColor(17, 24, 39); // #111827
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(9.5);
+      pdfDoc.text("Gross Total", leftMargin + contentWidth - 65, yPos);
+      pdfDoc.text(`$${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
 
-        yPos += 6;
-        pdfDoc.setTextColor(245, 158, 11); // amber
+      yPos += 6.5;
+      pdfDoc.setTextColor(107, 114, 128); // #6b7280
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(9);
+      pdfDoc.text("Amount Received", leftMargin + contentWidth - 65, yPos);
+      pdfDoc.setFont("helvetica", "normal");
+      pdfDoc.text(`$${(Number(inv.amountPaid) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+
+      yPos += 3;
+      pdfDoc.setDrawColor(229, 231, 235); // #e5e7eb
+      pdfDoc.line(leftMargin + contentWidth - 65, yPos + 1, leftMargin + contentWidth, yPos + 1);
+
+      yPos += 9;
+      const balanceVal = Number(inv.balance) ?? (total - (Number(inv.amountPaid) || 0));
+      if (balanceVal <= 0) {
+        pdfDoc.setTextColor(22, 163, 74); // Green
         pdfDoc.setFont("helvetica", "bold");
         pdfDoc.setFontSize(12);
-        pdfDoc.text("TOTAL DUE", leftMargin + contentWidth - 65, yPos);
-        pdfDoc.text(`$${(Number(inv.balance) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+        pdfDoc.text("REMAINING DUE", leftMargin + contentWidth - 65, yPos);
+        pdfDoc.text("$0.00", leftMargin + contentWidth - 5, yPos, { align: "right" });
       } else {
-        // Due
-        pdfDoc.setTextColor(22, 163, 74); // Keep green highlight color for the primary metric
+        pdfDoc.setTextColor(245, 158, 11); // Amber
         pdfDoc.setFont("helvetica", "bold");
         pdfDoc.setFontSize(12);
-        pdfDoc.text("TOTAL DUE", leftMargin + contentWidth - 65, yPos);
-        pdfDoc.text(`$${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+        pdfDoc.text("REMAINING DUE", leftMargin + contentWidth - 65, yPos);
+        pdfDoc.text(`$${balanceVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
       }
 
       yPos += 14;
@@ -1175,12 +1247,51 @@ export default function FinancePage() {
                                     updatePayload.balance = Math.max(0, inv.total - amt);
                                   }
                                   try {
-                                    await updateDoc(doc(db, "invoices", inv.id), updatePayload);
+                                    let targetId = inv.id;
+
+                                    if (inv.id.startsWith("sim-inv-")) {
+                                      const newPayload = {
+                                        invoiceNumber: inv.invoiceNumber,
+                                        clientId: inv.clientId,
+                                        projectId: inv.projectId,
+                                        invoiceDate: inv.invoiceDate,
+                                        dueDate: inv.dueDate,
+                                        amount: inv.amount,
+                                        tax: inv.tax,
+                                        total: inv.total,
+                                        amountPaid: updatePayload.amountPaid ?? inv.amountPaid,
+                                        balance: updatePayload.balance ?? inv.balance,
+                                        status: updatePayload.status ?? inv.status,
+                                        paymentMethod: inv.paymentMethod || "Credit Card",
+                                        receiptUrl: "",
+                                        notes: `Generated on status change to ${newStatus}.`,
+                                        description: inv.description || "Software and App Development",
+                                        clientName: inv.clientName || "",
+                                        clientAttention: inv.clientAttention || "",
+                                        clientEmail: inv.clientEmail || "",
+                                        craNumber: inv.craNumber || "",
+                                        hstNumber: inv.hstNumber || "",
+                                        fromCompanyName: inv.fromCompanyName || "14689941 Canada Inc.",
+                                        fromBrandName: inv.fromBrandName || "Operating as Monk Media",
+                                        fromEmail: inv.fromEmail || "info@monkmedia.ca"
+                                      };
+                                      const docRef = await addDoc(collection(db, "invoices"), newPayload);
+                                      targetId = docRef.id;
+                                    } else {
+                                      await updateDoc(doc(db, "invoices", inv.id), updatePayload);
+                                    }
+
+                                    // Auto-complete associated project/campaign if status changed to completed/received
+                                    if (inv.projectId && (newStatus === "Received" || newStatus === "Paid")) {
+                                      await updateDoc(doc(db, "projects", inv.projectId), {
+                                        status: "Completed"
+                                      });
+                                    }
 
                                     if (amountToLog > 0) {
                                       // 1. Add Payment record
                                       await addDoc(collection(db, "payments"), {
-                                        invoiceId: inv.id,
+                                        invoiceId: targetId,
                                         clientId: inv.clientId,
                                         amount: amountToLog,
                                         dateReceived: new Date().toISOString().split("T")[0],
@@ -1307,9 +1418,14 @@ export default function FinancePage() {
                               {role === "admin" && (
                                 <button
                                   onClick={async () => {
-                                    if (confirm("Are you sure you want to delete this invoice?")) {
+                                    if (confirm("Are you sure you want to delete this invoice? This will also remove the associated project/campaign from tracking.")) {
                                       try {
-                                        await deleteDoc(doc(db, "invoices", inv.id));
+                                        if (inv.realInvoiceId) {
+                                          await deleteDoc(doc(db, "invoices", inv.realInvoiceId));
+                                        }
+                                        if (inv.projectId) {
+                                          await deleteDoc(doc(db, "projects", inv.projectId));
+                                        }
                                         alert("Invoice deleted successfully!");
                                       } catch (err) {
                                         alert("Error: " + err.message);
@@ -1394,7 +1510,8 @@ export default function FinancePage() {
 
             {/* SUB-TAB 3: PAYMENTS */}
             {activeTab === "payments" && (
-              <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
+              <>
+                <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                   <thead>
@@ -1476,6 +1593,73 @@ export default function FinancePage() {
                 </table>
                 </div>
               </div>
+
+              {/* Personnel Payouts Table */}
+              <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden mt-6">
+                <div className="p-4 bg-sky-50/20 border-b border-sky-100 flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-sky-600">Personnel Payouts</h3>
+                  <span className="text-[10px] text-sky-400 font-bold uppercase tracking-wider">
+                    Payments to Team / Vendors
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                        <th className="p-4 px-6">Name</th>
+                        <th className="p-4 px-6">Date of Payment</th>
+                        <th className="p-4 px-6 text-right font-bold">Amount Paid</th>
+                        <th className="p-4 px-6 text-right font-bold">Remaining Balance</th>
+                        <th className="p-4 px-6">Payment Method</th>
+                        <th className="p-4 px-6">Notes</th>
+                        {role === "admin" && <th className="p-4 px-6 text-right w-20">Action</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                      {filteredPayouts.length === 0 ? (
+                        <tr>
+                          <td colSpan={role === "admin" ? 7 : 6} className="p-8 text-center text-sky-400 font-medium">
+                            No payouts logged for this period.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredPayouts.map((p) => (
+                          <tr key={p.id} className="hover:bg-sky-50/10">
+                            <td className="p-4 px-6 font-semibold text-sky-900">{p.name}</td>
+                            <td className="p-4 px-6">{p.date}</td>
+                            <td className="p-4 px-6 text-right text-sky-600 font-bold">${Number(p.amount).toLocaleString()}</td>
+                            <td className="p-4 px-6 text-right text-red-500 font-bold">${Number(p.remainingBalance || 0).toLocaleString()}</td>
+                            <td className="p-4 px-6 capitalize">{p.method}</td>
+                            <td className="p-4 px-6 text-sky-400 font-medium">{p.notes || "None"}</td>
+                            {role === "admin" && (
+                              <td className="p-4 px-6 text-right">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (confirm("Are you sure you want to delete this payout record?")) {
+                                      try {
+                                        await deleteDoc(doc(db, "payouts", p.id));
+                                        alert("Payout record deleted successfully!");
+                                      } catch (err) {
+                                        alert("Error: " + err.message);
+                                      }
+                                    }
+                                  }}
+                                  className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-all"
+                                  title="Delete Payout"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              </>
             )}
 
             {/* SUB-TAB 4: PROFIT STATEMENT */}
@@ -1654,7 +1838,20 @@ export default function FinancePage() {
                     <select
                       value={invClientId}
                       required
-                      onChange={(e) => setInvClientId(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setInvClientId(val);
+                        const cObj = clients.find((c) => c.id === val);
+                        if (cObj) {
+                          setInvClientName(cObj.businessName || "");
+                          setInvClientAttention(cObj.contactPerson || "");
+                          setInvClientEmail(cObj.email || "");
+                        } else {
+                          setInvClientName("");
+                          setInvClientAttention("");
+                          setInvClientEmail("");
+                        }
+                      }}
                       className="w-full p-2 border border-sky-100 rounded-xl"
                     >
                       <option value="">Choose a Client...</option>
@@ -2550,7 +2747,6 @@ export default function FinancePage() {
                       <thead>
                         <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                           <th className="p-3 px-4">Date</th>
-                          <th className="p-3 px-4">Invoice / Reference</th>
                           <th className="p-3 px-4">Method</th>
                           <th className="p-3 px-4">Notes</th>
                           <th className="p-3 px-4 text-right">Amount</th>
@@ -2562,7 +2758,6 @@ export default function FinancePage() {
                           .map((pay) => (
                             <tr key={pay.id} className="hover:bg-sky-50/5">
                               <td className="p-3 px-4 whitespace-nowrap">{pay.dateReceived}</td>
-                              <td className="p-3 px-4 font-bold">{pay.invoiceId}</td>
                               <td className="p-3 px-4 capitalize">
                                 {pay.isOutstanding ? (
                                   <span className="text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-[10px] font-bold">Outstanding</span>

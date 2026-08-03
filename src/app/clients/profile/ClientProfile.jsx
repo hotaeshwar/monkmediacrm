@@ -88,6 +88,7 @@ export default function ClientProfilePage() {
   const [newProjInvoiceDueDate, setNewProjInvoiceDueDate] = useState("");
   const [newProjValue, setNewProjValue] = useState("");
   const [newProjBillingType, setNewProjBillingType] = useState("One-Time");
+  const [newProjIncludeHST, setNewProjIncludeHST] = useState(false);
 
   // Edit Project Form States
   const [editProjOpen, setEditProjOpen] = useState(false);
@@ -130,6 +131,31 @@ export default function ClientProfilePage() {
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("Bank Transfer");
   const [payNotes, setPayNotes] = useState("");
+
+  // Edit Invoice Payment Form States
+  const [editPaymentOpen, setEditPaymentOpen] = useState(false);
+  const [editPaymentInvoice, setEditPaymentInvoice] = useState(null);
+  const [editPaymentStatus, setEditPaymentStatus] = useState("Paid"); // Paid (Completed/Fully), Partial, Due (Outstanding)
+  const [editPaymentAmount, setEditPaymentAmount] = useState("");
+  const [editPaymentMethod, setEditPaymentMethod] = useState("Bank Transfer");
+  const [editPaymentNotes, setEditPaymentNotes] = useState("");
+
+  // Financial Settings Local Controlled States
+  const [finRetainer, setFinRetainer] = useState("");
+  const [finGst, setFinGst] = useState("");
+  const [finEmail, setFinEmail] = useState("");
+  const [finFreq, setFinFreq] = useState("Monthly");
+  const [finTaxRate, setFinTaxRate] = useState(13);
+
+  useEffect(() => {
+    if (client) {
+      setFinRetainer(client.financials?.monthlyRetainer ?? "");
+      setFinGst(client.financials?.gstNumber ?? "");
+      setFinEmail(client.financials?.billingEmail ?? "");
+      setFinFreq(client.financials?.paymentFrequency ?? "Monthly");
+      setFinTaxRate(client.financials?.taxRate ?? 13);
+    }
+  }, [client]);
 
   // New Invoice Form
   const [newInvNum, setNewInvNum] = useState("");
@@ -180,164 +206,161 @@ export default function ClientProfilePage() {
   useEffect(() => {
     if (!currentUser || authLoading) return;
 
-    const fetchClientData = async () => {
-      try {
-        setLoading(true);
-        setError("");
+    setLoading(true);
+    setError("");
 
-        // 1. Fetch Client doc
-        const clientDoc = await getDoc(doc(db, "clients", id));
-        if (!clientDoc.exists()) {
-          setError("Client profile not found.");
-          setLoading(false);
-          return;
-        }
-
-        const clientData = { id: clientDoc.id, ...clientDoc.data() };
-        
-        // Auth Guards check
-        if (role === "manager" && clientData.accountManager !== currentUser?.uid) {
-          setError("Access Denied: Scoped managers only.");
-          setLoading(false);
-          return;
-        }
-        if (role === "team" && !clientData.assignedTeam?.includes(currentUser?.uid) && clientData.accountManager !== currentUser?.uid) {
-          setError("Access Denied: You are not assigned to this client.");
-          setLoading(false);
-          return;
-        }
-        if (role === "client" && clientData.id !== clientId) {
-          setError("Access Denied: You can only view your own client profile.");
-          setLoading(false);
-          return;
-        }
-
-        setClient(clientData);
-        setNotesText(clientData.notes || "");
-        setTeamSelect(clientData.assignedTeam || []);
-
-        // 2. Fetch Team/Users list for assignments
-        const teamSnap = await getDocs(collection(db, "users"));
-        const members = [];
-        teamSnap.forEach((doc) => {
-          members.push({ id: doc.id, ...doc.data() });
-        });
-        setTeamMembers(members);
-
-        // 3. Real-time subqueries
-        const unsubChecklist = onSnapshot(
-          query(collection(db, "onboardingChecklists"), where("clientId", "==", id)),
-          async (snap) => {
-            if (!snap.empty) {
-              const docSnap = snap.docs[0];
-              const data = docSnap.data();
-              if (!data.items) {
-                // Auto-migrate checklist to have items array
-                const defaultKeys = [
-                  { key: "clientInfoCollected", label: "Client Info Collected" },
-                  { key: "contractSigned", label: "Contract Signed" },
-                  { key: "depositReceived", label: "Deposit Received" },
-                  { key: "invoiceCreated", label: "Invoice Created" },
-                  { key: "driveFolderCreated", label: "Drive Folder Created" },
-                  { key: "logoUploaded", label: "Logo Assets Uploaded" },
-                  { key: "brandAssetsUploaded", label: "Brand Collaterals Uploaded" },
-                  { key: "socialMediaAccess", label: "Social Media Credentials Logged" },
-                  { key: "metaBusinessAccess", label: "Meta Business Manager Access" },
-                  { key: "adAccountAccess", label: "Meta Ad Account Access Shared" },
-                  { key: "websiteAccess", label: "Website CMS/Hosting access shared" },
-                  { key: "servicesConfirmed", label: "Services Structure Finalized" },
-                  { key: "deliverablesConfirmed", label: "Deliverables Pipeline Confirmed" },
-                  { key: "firstShootScheduled", label: "First Content Shoot Scheduled" },
-                  { key: "teamAssigned", label: "Team Members Assigned" },
-                  { key: "addedToCalendar", label: "Google Calendar Sync complete" },
-                  { key: "reportingTemplateCreated", label: "Monthly Report Dashboard Setup" },
-                ];
-                const items = defaultKeys.map(item => ({
-                  id: item.key,
-                  label: item.label,
-                  checked: data[item.key] === true,
-                  projectId: data[item.key + "_projectId"] || "",
-                  notes: data[item.key + "_notes"] || "",
-                  tracked: true
-                }));
-                try {
-                  await updateDoc(doc(db, "onboardingChecklists", docSnap.id), { items });
-                } catch (err) {
-                  console.error("Migration failed:", err);
-                }
-              } else {
-                setChecklist({ id: docSnap.id, ...data });
-              }
-            } else {
-              setChecklist(null);
-            }
-          }
-        );
-
-        const unsubProjects = onSnapshot(
-          query(collection(db, "projects"), where("clientId", "==", id)),
-          (snap) => {
-            const list = [];
-            snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-            setProjects(list);
-          }
-        );
-
-        const unsubInvoices = onSnapshot(
-          query(collection(db, "invoices"), where("clientId", "==", id)),
-          (snap) => {
-            const list = [];
-            snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-            setInvoices(list);
-          }
-        );
-
-        const unsubPayments = onSnapshot(
-          collection(db, "payments"),
-          (snap) => {
-            const list = [];
-            snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-            setPayments(list);
-          }
-        );
-
-        const unsubContent = onSnapshot(
-          query(collection(db, "content"), where("clientId", "==", id)),
-          (snap) => {
-            const list = [];
-            snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-            setContentList(list);
-          }
-        );
-
-        const unsubDocs = onSnapshot(
-          query(collection(db, "documents"), where("clientId", "==", id)),
-          (snap) => {
-            const list = [];
-            snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-            setDocuments(list);
-          }
-        );
-
+    const unsubClient = onSnapshot(doc(db, "clients", id), (docSnap) => {
+      if (!docSnap.exists()) {
+        setError("Client profile not found.");
         setLoading(false);
-
-        return () => {
-          unsubChecklist();
-          unsubProjects();
-          unsubInvoices();
-          unsubPayments();
-          unsubContent();
-          unsubDocs();
-        };
-      } catch (err) {
-        console.error("Client load error:", err);
-        setError("Error querying database records.");
-        setLoading(false);
+        return;
       }
-    };
 
-    fetchClientData();
-  }, [currentUser, role, authLoading, id]);
+      const clientData = { id: docSnap.id, ...docSnap.data() };
+      
+      // Auth Guards check
+      if (role === "manager" && clientData.accountManager !== currentUser?.uid) {
+        setError("Access Denied: Scoped managers only.");
+        setLoading(false);
+        return;
+      }
+      if (role === "team" && !clientData.assignedTeam?.includes(currentUser?.uid) && clientData.accountManager !== currentUser?.uid) {
+        setError("Access Denied: You are not assigned to this client.");
+        setLoading(false);
+        return;
+      }
+      if (role === "client" && clientData.id !== clientId) {
+        setError("Access Denied: You can only view your own client profile.");
+        setLoading(false);
+        return;
+      }
+
+      setClient(clientData);
+      setNotesText(clientData.notes || "");
+      setTeamSelect(clientData.assignedTeam || []);
+    }, (err) => {
+      console.error("Client load error:", err);
+      setError("Error querying database records.");
+      setLoading(false);
+    });
+
+    // Fetch team members
+    getDocs(collection(db, "users")).then((teamSnap) => {
+      const members = [];
+      teamSnap.forEach((d) => {
+        members.push({ id: d.id, ...d.data() });
+      });
+      setTeamMembers(members);
+    }).catch(err => {
+      console.warn("Failed to fetch team members:", err);
+    });
+
+    const unsubChecklist = onSnapshot(
+      query(collection(db, "onboardingChecklists"), where("clientId", "==", id)),
+      async (snap) => {
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          const data = docSnap.data();
+          if (!data.items) {
+            // Auto-migrate checklist to have items array
+            const defaultKeys = [
+              { key: "clientInfoCollected", label: "Client Info Collected" },
+              { key: "contractSigned", label: "Contract Signed" },
+              { key: "depositReceived", label: "Deposit Received" },
+              { key: "invoiceCreated", label: "Invoice Created" },
+              { key: "driveFolderCreated", label: "Drive Folder Created" },
+              { key: "logoUploaded", label: "Logo Assets Uploaded" },
+              { key: "brandAssetsUploaded", label: "Brand Collaterals Uploaded" },
+              { key: "socialMediaAccess", label: "Social Media Credentials Logged" },
+              { key: "metaBusinessAccess", label: "Meta Business Manager Access" },
+              { key: "adAccountAccess", label: "Meta Ad Account Access Shared" },
+              { key: "websiteAccess", label: "Website CMS/Hosting access shared" },
+              { key: "servicesConfirmed", label: "Services Structure Finalized" },
+              { key: "deliverablesConfirmed", label: "Deliverables Pipeline Confirmed" },
+              { key: "firstShootScheduled", label: "First Content Shoot Scheduled" },
+              { key: "teamAssigned", label: "Team Members Assigned" },
+              { key: "addedToCalendar", label: "Google Calendar Sync complete" },
+              { key: "reportingTemplateCreated", label: "Monthly Report Dashboard Setup" },
+            ];
+            const items = defaultKeys.map(item => ({
+              id: item.key,
+              label: item.label,
+              checked: data[item.key] === true,
+              projectId: data[item.key + "_projectId"] || "",
+              notes: data[item.key + "_notes"] || "",
+              tracked: true
+            }));
+            try {
+              await updateDoc(doc(db, "onboardingChecklists", docSnap.id), { items });
+            } catch (err) {
+              console.error("Migration failed:", err);
+            }
+          } else {
+            setChecklist({ id: docSnap.id, ...data });
+          }
+        } else {
+          setChecklist(null);
+        }
+      }
+    );
+
+    const unsubProjects = onSnapshot(
+      query(collection(db, "projects"), where("clientId", "==", id)),
+      (snap) => {
+        const list = [];
+        snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+        setProjects(list);
+      }
+    );
+
+    const unsubInvoices = onSnapshot(
+      query(collection(db, "invoices"), where("clientId", "==", id)),
+      (snap) => {
+        const list = [];
+        snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+        setInvoices(list);
+      }
+    );
+
+    const unsubPayments = onSnapshot(
+      collection(db, "payments"),
+      (snap) => {
+        const list = [];
+        snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+        setPayments(list);
+      }
+    );
+
+    const unsubContent = onSnapshot(
+      query(collection(db, "content"), where("clientId", "==", id)),
+      (snap) => {
+        const list = [];
+        snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+        setContentList(list);
+      }
+    );
+
+    const unsubDocs = onSnapshot(
+      query(collection(db, "documents"), where("clientId", "==", id)),
+      (snap) => {
+        const list = [];
+        snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+        setDocuments(list);
+      }
+    );
+
+    setLoading(false);
+
+    return () => {
+      unsubClient();
+      unsubChecklist();
+      unsubProjects();
+      unsubInvoices();
+      unsubPayments();
+      unsubContent();
+      unsubDocs();
+    };
+  }, [currentUser, authLoading, id]);
 
   const primaryInvoiceNumber = React.useMemo(() => {
     if (invoices && invoices.length > 0) {
@@ -354,7 +377,11 @@ export default function ClientProfilePage() {
       const baseVal = Number(proj.value) || 0;
       const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
       const total = baseVal + tax;
-      const status = proj.status === "Completed" ? "Paid" : "Due";
+
+      // Respect real invoice values if they exist
+      const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? total : 0);
+      const balance = realInv ? (Number(realInv.balance) ?? (total - amountPaid)) : (proj.status === "Completed" ? 0 : total);
+      const status = realInv ? (realInv.status || (balance <= 0 ? "Received" : "Due")) : (proj.status === "Completed" ? "Received" : "Due");
 
       return {
         id: realInv?.id || `sim-inv-${proj.id}`,
@@ -364,8 +391,8 @@ export default function ClientProfilePage() {
         amount: baseVal,
         tax,
         total,
-        amountPaid: status === "Paid" ? total : 0,
-        balance: status === "Paid" ? 0 : total,
+        amountPaid,
+        balance,
         status,
         projectId: proj.id,
         projectName: proj.name,
@@ -376,37 +403,68 @@ export default function ClientProfilePage() {
 
   const clientPayments = React.useMemo(() => {
     const list = [];
-    synthesizedProjectInvoices.forEach((inv) => {
-      if (inv.status === "Paid") {
-        const realPay = payments.find((p) => p.invoiceId === inv.invoiceNumber && p.amount > 0);
+    
+    // 1. Add all actual payments matching this client
+    payments.forEach((pay) => {
+      if (pay.clientId === id) {
+        const inv = synthesizedProjectInvoices.find(
+          (i) => i.id === pay.invoiceId || i.invoiceNumber === pay.invoiceId
+        );
         list.push({
-          id: `pay-${inv.id}`,
-          invoiceId: inv.invoiceNumber,
+          id: pay.id,
+          invoiceId: pay.invoiceId,
           clientId: id,
-          amount: inv.total,
-          dateReceived: realPay?.dateReceived || inv.invoiceDate,
-          method: realPay?.method || "",
-          notes: realPay?.notes || `Payment for Campaign: ${inv.projectName}`,
+          amount: Number(pay.amount) || 0,
+          dateReceived: pay.dateReceived,
+          method: pay.method || "",
+          notes: pay.notes || (inv ? `Payment for Campaign: ${inv.projectName}` : "Manual Payment"),
           isOutstanding: false
         });
-      } else {
+      }
+    });
+
+    // 1.5. Add simulated payment logs for invoices with amountPaid > 0 but no actual payment record
+    synthesizedProjectInvoices.forEach((inv) => {
+      if (inv.amountPaid > 0) {
+        const hasActual = payments.some(
+          (pay) => pay.clientId === id && (pay.invoiceId === inv.id || pay.invoiceId === inv.invoiceNumber)
+        );
+        if (!hasActual) {
+          list.push({
+            id: `sim-pay-${inv.id}`,
+            invoiceId: inv.id,
+            clientId: id,
+            amount: inv.amountPaid,
+            dateReceived: inv.invoiceDate,
+            method: "Bank Transfer",
+            notes: `Payment for Campaign: ${inv.projectName}`,
+            isOutstanding: false
+          });
+        }
+      }
+    });
+
+    // 2. Add outstanding/unpaid simulated invoice balances
+    synthesizedProjectInvoices.forEach((inv) => {
+      if (inv.balance > 0) {
         list.push({
-          id: `pay-${inv.id}`,
-          invoiceId: inv.invoiceNumber,
+          id: `outstanding-${inv.id}`,
+          invoiceId: inv.id,
           clientId: id,
           amount: 0,
           dateReceived: inv.dueDate,
           method: "",
           notes: `Project Campaign: ${inv.projectName} (Unpaid)`,
           isOutstanding: true,
-          balance: inv.total
+          balance: inv.balance
         });
       }
     });
+
     return list;
   }, [synthesizedProjectInvoices, id, client, payments]);
 
-  if (authLoading || loading) {
+  if (authLoading || loading || !client) {
     return <Loader fullPage={true} message="Loading client profile data..." />;
   }
 
@@ -433,7 +491,26 @@ export default function ClientProfilePage() {
     try {
       const clientRef = doc(db, "clients", id);
       await updateDoc(clientRef, updatedFields);
-      setClient((prev) => ({ ...prev, ...updatedFields }));
+      setClient((prev) => {
+        if (!prev) return prev;
+        const copy = { ...prev };
+        Object.keys(updatedFields).forEach((key) => {
+          if (key.includes(".")) {
+            const parts = key.split(".");
+            let current = copy;
+            for (let i = 0; i < parts.length - 1; i++) {
+              const part = parts[i];
+              current[part] = { ...current[part] };
+              current = current[part];
+            }
+            const lastKey = parts[parts.length - 1];
+            current[lastKey] = updatedFields[key];
+          } else {
+            copy[key] = updatedFields[key];
+          }
+        });
+        return copy;
+      });
     } catch (err) {
       alert("Failed to update profile: " + err.message);
     }
@@ -471,17 +548,6 @@ export default function ClientProfilePage() {
         "financials.contractStart": editData.projectStartDate || "",
       };
       await handleUpdateClient(payload);
-      
-      // Update local client financials state
-      setClient((prev) => ({
-        ...prev,
-        financials: {
-          ...prev.financials,
-          monthlyRetainer: Number(editData.monthlyRetainer) || 0,
-          projectStartDate: editData.projectStartDate || "",
-          contractStart: editData.projectStartDate || "",
-        }
-      }));
 
       setNotesText(editData.notes || "");
       setIsEditingClient(false);
@@ -653,7 +719,7 @@ export default function ClientProfilePage() {
 
         const projStart = newProjStartDate || new Date().toISOString().split("T")[0];
         const dueStr = newProjInvoiceDueDate || addDays(projStart, 14);
-        const taxRate = client?.financials?.taxRate ?? 0;
+        const taxRate = newProjIncludeHST ? (client?.financials?.taxRate ?? 13) : 0;
         const tax = Number(((projectVal * taxRate) / 100).toFixed(2));
         const total = projectVal + tax;
 
@@ -690,6 +756,7 @@ export default function ClientProfilePage() {
       setNewProjInvoiceDueDate("");
       setNewProjValue("");
       setNewProjBillingType("One-Time");
+      setNewProjIncludeHST(false);
       alert("Project created successfully!");
     } catch (err) {
       alert("Error adding project: " + err.message);
@@ -948,6 +1015,106 @@ export default function ClientProfilePage() {
       setPayProject(null);
     } catch (err) {
       alert("Error recording payment: " + err.message);
+    }
+  };
+
+  const handleSavePaymentEdit = async (e) => {
+    e.preventDefault();
+    if (!editPaymentInvoice) return;
+
+    try {
+      let invId = editPaymentInvoice.realInvoiceId;
+      const totalVal = Number(editPaymentInvoice.total) || 0;
+      
+      let nextPaid = 0;
+      let nextBal = totalVal;
+      let nextStatus = "Due";
+      let addedAmount = 0;
+
+      if (editPaymentStatus === "Paid") {
+        nextPaid = totalVal;
+        nextBal = 0;
+        nextStatus = "Received";
+        addedAmount = Math.max(0, totalVal - (Number(editPaymentInvoice.amountPaid) || 0));
+      } else if (editPaymentStatus === "Partial") {
+        addedAmount = Number(editPaymentAmount) || 0;
+        if (addedAmount <= 0) {
+          alert("Please enter a valid amount to add.");
+          return;
+        }
+        nextPaid = (Number(editPaymentInvoice.amountPaid) || 0) + addedAmount;
+        nextBal = Math.max(0, totalVal - nextPaid);
+        nextStatus = nextBal <= 0 ? "Received" : "Partial";
+      } else {
+        // Due / Unpaid
+        nextPaid = 0;
+        nextBal = totalVal;
+        nextStatus = "Due";
+      }
+
+      // 1. If we don't have a real invoice doc, create one in Firestore
+      if (!invId) {
+        const newInvRef = await addDoc(collection(db, "invoices"), {
+          invoiceNumber: editPaymentInvoice.invoiceNumber || `INV-${editPaymentInvoice.projectName.replace(/\s+/g, "-")}-${Date.now().toString().slice(-6)}`,
+          clientId: id,
+          projectId: editPaymentInvoice.projectId,
+          invoiceDate: editPaymentInvoice.invoiceDate,
+          dueDate: editPaymentInvoice.dueDate,
+          amount: editPaymentInvoice.amount,
+          tax: editPaymentInvoice.tax,
+          total: totalVal,
+          amountPaid: nextPaid,
+          balance: nextBal,
+          status: nextStatus,
+          paymentMethod: editPaymentMethod,
+          notes: `Invoice generated during payment status update for campaign "${editPaymentInvoice.projectName}".`
+        });
+        invId = newInvRef.id;
+      } else {
+        // Update existing invoice document
+        await updateDoc(doc(db, "invoices", invId), {
+          amountPaid: nextPaid,
+          balance: nextBal,
+          status: nextStatus
+        });
+      }
+
+      // 2. Add payment record if an amount is added
+      if (addedAmount > 0) {
+        await addDoc(collection(db, "payments"), {
+          invoiceId: invId,
+          clientId: id,
+          amount: addedAmount,
+          dateReceived: new Date().toISOString().split("T")[0],
+          method: editPaymentMethod,
+          notes: editPaymentNotes || `Payment recorded for campaign: ${editPaymentInvoice.projectName}`
+        });
+
+        // 3. Update client total paid
+        const clientRef = doc(db, "clients", id);
+        const clientDoc = await getDoc(clientRef);
+        if (clientDoc.exists()) {
+          const clientData = clientDoc.data();
+          const prevPaid = Number(clientData.financials?.totalPaid) || 0;
+          await updateDoc(clientRef, {
+            "financials.totalPaid": prevPaid + addedAmount,
+            "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
+          });
+        }
+      }
+
+      // 4. Update the corresponding project status if status is fully received
+      if (nextStatus === "Received" || nextStatus === "Paid") {
+        await updateDoc(doc(db, "projects", editPaymentInvoice.projectId), {
+          status: "Completed"
+        });
+      }
+
+      setEditPaymentOpen(false);
+      setEditPaymentInvoice(null);
+      alert("Payment status updated successfully!");
+    } catch (err) {
+      alert("Error updating payment: " + err.message);
     }
   };
 
@@ -1356,14 +1523,7 @@ export default function ClientProfilePage() {
                             <div className="text-right">
                               <p className="text-sky-500 font-bold">${Number(p.value).toLocaleString()}</p>
                             </div>
-                            {(role === "admin" || role === "manager") && (
-                              <button
-                                onClick={() => handleStartEditProject(p)}
-                                className="px-2.5 py-1 bg-white hover:bg-sky-50 text-sky-500 rounded-lg border border-sky-100 text-[10px] font-bold"
-                              >
-                                Edit
-                              </button>
-                            )}
+
                           </div>
                         </div>
                       ))}
@@ -1729,7 +1889,19 @@ export default function ClientProfilePage() {
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
                     </div>
-                    <div className="sm:col-span-4 flex items-end justify-end">
+                    <div className="sm:col-span-3 flex items-center gap-2 py-2">
+                      <input
+                        type="checkbox"
+                        id="newProjIncludeHST"
+                        checked={newProjIncludeHST}
+                        onChange={(e) => setNewProjIncludeHST(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
+                      />
+                      <label htmlFor="newProjIncludeHST" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
+                        Include HST / Tax (13%)
+                      </label>
+                    </div>
+                    <div className="sm:col-span-1 flex items-end justify-end">
                       <button
                         type="submit"
                         className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition-all shadow"
@@ -1794,12 +1966,7 @@ export default function ClientProfilePage() {
                                 >
                                   Pay
                                 </button>
-                                <button
-                                  onClick={() => handleStartEditProject(p)}
-                                  className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 rounded-xl text-xs font-bold transition-all"
-                                >
-                                  Edit
-                                </button>
+
                                 {p.billingType === "Retainer" && (
                                   <button
                                     onClick={() => handleRolloverProject(p)}
@@ -1809,15 +1976,7 @@ export default function ClientProfilePage() {
                                     Rollover
                                   </button>
                                 )}
-                                {role === "admin" && (
-                                  <button
-                                    onClick={() => handleDeleteProject(p.id)}
-                                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-500 border border-red-100 rounded-xl text-[10px] font-bold transition-all"
-                                    title="Delete Project"
-                                  >
-                                    Delete
-                                  </button>
-                                )}
+
                               </div>
                             )}
                           </td>
@@ -2332,6 +2491,8 @@ export default function ClientProfilePage() {
                 </div>
               )}
 
+
+
             </div>
           )}
 
@@ -2348,7 +2509,8 @@ export default function ClientProfilePage() {
                       <label className="block text-sky-500 mb-1">Monthly Retainer ($)</label>
                       <input
                         type="number"
-                        defaultValue={client.financials?.monthlyRetainer || 0}
+                        value={finRetainer}
+                        onChange={(e) => setFinRetainer(e.target.value)}
                         onBlur={(e) => handleUpdateClient({ "financials.monthlyRetainer": Number(e.target.value) || 0 })}
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
@@ -2357,7 +2519,8 @@ export default function ClientProfilePage() {
                       <label className="block text-sky-500 mb-1">GST/Tax Number</label>
                       <input
                         type="text"
-                        defaultValue={client.financials?.gstNumber || ""}
+                        value={finGst}
+                        onChange={(e) => setFinGst(e.target.value)}
                         onBlur={(e) => handleUpdateClient({ "financials.gstNumber": e.target.value })}
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
@@ -2366,7 +2529,8 @@ export default function ClientProfilePage() {
                       <label className="block text-sky-500 mb-1">Billing Email</label>
                       <input
                         type="email"
-                        defaultValue={client.financials?.billingEmail || ""}
+                        value={finEmail}
+                        onChange={(e) => setFinEmail(e.target.value)}
                         onBlur={(e) => handleUpdateClient({ "financials.billingEmail": e.target.value })}
                         className="w-full p-2 border border-sky-100 rounded-xl"
                       />
@@ -2374,9 +2538,12 @@ export default function ClientProfilePage() {
                     <div>
                       <label className="block text-sky-500 mb-1">Frequency</label>
                       <select
-                        defaultValue={client.financials?.paymentFrequency || "Monthly"}
-                        onChange={(e) => handleUpdateClient({ "financials.paymentFrequency": e.target.value })}
-                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
+                        value={finFreq}
+                        onChange={(e) => {
+                          setFinFreq(e.target.value);
+                          handleUpdateClient({ "financials.paymentFrequency": e.target.value });
+                        }}
+                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
                       >
                         <option value="One-Time">One-Time</option>
                         <option value="Weekly">Weekly</option>
@@ -2387,8 +2554,11 @@ export default function ClientProfilePage() {
                     <div>
                       <label className="block text-sky-500 mb-1">HST / Tax Option</label>
                       <select
-                        value={client.financials?.taxRate === 13 ? "13" : "0"}
-                        onChange={(e) => handleUpdateClient({ "financials.taxRate": Number(e.target.value) || 0 })}
+                        value={String(finTaxRate)}
+                        onChange={(e) => {
+                          setFinTaxRate(Number(e.target.value) || 0);
+                          handleUpdateClient({ "financials.taxRate": Number(e.target.value) || 0 });
+                        }}
                         disabled={role !== "admin"}
                         className={`w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white ${role !== "admin" ? "opacity-60 cursor-not-allowed" : ""}`}
                       >
@@ -2444,50 +2614,32 @@ export default function ClientProfilePage() {
                                   {inv.status || "Due"}
                                 </span>
                               </td>
-                              <td className="p-3 px-4 text-right font-bold">${Number(inv.total).toLocaleString()}</td>
+                              <td className="p-3 px-4 text-right font-bold">
+                                <div>${Number(inv.total).toLocaleString()}</div>
+                                {inv.status === "Partial" && (
+                                  <div className="text-[10px] tracking-tight mt-0.5 font-semibold">
+                                    <span className="text-emerald-600 font-bold">Received: </span>
+                                    <span className="text-sky-900">${Number(inv.amountPaid || 0).toLocaleString()}</span>
+                                    <span className="text-sky-300 mx-1">|</span>
+                                    <span className="text-amber-600 font-bold">Due: </span>
+                                    <span className="text-sky-900">${Number(inv.balance || 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                              </td>
                               <td className="p-3 px-4 text-right">
-                                {role !== "client" && inv.status !== "Received" && inv.status !== "Paid" && (
+                                {(role === "admin" || role === "manager") && (
                                   <button
-                                    onClick={async () => {
-                                      try {
-                                        if (inv.realInvoiceId) {
-                                          await updateDoc(doc(db, "invoices", inv.realInvoiceId), {
-                                            status: "Received",
-                                            amountPaid: inv.total,
-                                            balance: 0
-                                          });
-                                        }
-                                        await updateDoc(doc(db, "projects", inv.projectId), {
-                                          status: "Completed"
-                                        });
-
-                                        await addDoc(collection(db, "payments"), {
-                                          invoiceId: inv.invoiceNumber,
-                                          clientId: id,
-                                          amount: inv.total,
-                                          dateReceived: new Date().toISOString().split("T")[0],
-                                          method: client?.financials?.paymentMethod || "Bank Transfer",
-                                          notes: `Payment for Campaign: ${inv.projectName}`
-                                        });
-
-                                        const clientRef = doc(db, "clients", id);
-                                        const clientDoc = await getDoc(clientRef);
-                                        if (clientDoc.exists()) {
-                                          const clientData = clientDoc.data();
-                                          const prevPaid = Number(clientData.financials?.totalPaid) || 0;
-                                          await updateDoc(clientRef, {
-                                            "financials.totalPaid": prevPaid + inv.total,
-                                            "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
-                                          });
-                                        }
-                                        alert("Invoice marked as Paid successfully!");
-                                      } catch (err) {
-                                        alert("Error updating status: " + err.message);
-                                      }
+                                    onClick={() => {
+                                      setEditPaymentInvoice(inv);
+                                      setEditPaymentStatus(inv.status === "Received" || inv.status === "Paid" ? "Paid" : inv.status === "Partial" ? "Partial" : "Due");
+                                      setEditPaymentAmount("");
+                                      setEditPaymentMethod("Bank Transfer");
+                                      setEditPaymentNotes("");
+                                      setEditPaymentOpen(true);
                                     }}
                                     className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-full text-[10px] font-bold transition shadow-sm whitespace-nowrap inline-block text-center"
                                   >
-                                    Mark Paid
+                                    Edit Payment
                                   </button>
                                 )}
                               </td>
@@ -2512,7 +2664,6 @@ export default function ClientProfilePage() {
                       <thead>
                         <tr className="bg-sky-50/10 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                           <th className="p-3 px-4">Date</th>
-                          <th className="p-3 px-4">Invoice / Reference</th>
                           <th className="p-3 px-4">Method</th>
                           <th className="p-3 px-4">Notes</th>
                           <th className="p-3 px-4 text-right">Amount</th>
@@ -2521,7 +2672,7 @@ export default function ClientProfilePage() {
                       <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
                         {clientPayments.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="p-8 text-center text-sky-400">
+                            <td colSpan={4} className="p-8 text-center text-sky-400">
                               No payment logs found for this client.
                             </td>
                           </tr>
@@ -2531,9 +2682,6 @@ export default function ClientProfilePage() {
                             .map((pay) => (
                               <tr key={pay.id} className="hover:bg-sky-50/5">
                                 <td className="p-3 px-4">{pay.dateReceived}</td>
-                                <td className="p-3 px-4 font-bold">
-                                  {pay.invoiceId}
-                                </td>
                                 <td className="p-3 px-4 capitalize">
                                   {pay.isOutstanding ? (
                                     <span className="text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-[10px] font-bold">Outstanding</span>
@@ -3193,6 +3341,114 @@ export default function ClientProfilePage() {
 
         </div>
 
+        {/* Edit Payment Status Drawer */}
+        {editPaymentOpen && editPaymentInvoice && (
+          <div className="fixed inset-0 z-50 overflow-hidden">
+            <div className="absolute inset-0 bg-sky-950/20 backdrop-blur-sm" onClick={() => { setEditPaymentOpen(false); setEditPaymentInvoice(null); }} />
+            <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+              <div className="w-screen max-w-md bg-white shadow-2xl p-6 sm:p-8 flex flex-col h-full border-l border-sky-100">
+                <div className="flex items-center justify-between pb-4 border-b border-sky-100">
+                  <div>
+                    <h2 className="text-xl font-bold text-sky-600">Update Invoice Payment</h2>
+                    <p className="text-[10px] text-sky-400 font-bold uppercase mt-0.5">Invoice {editPaymentInvoice.invoiceNumber}</p>
+                  </div>
+                  <button onClick={() => { setEditPaymentOpen(false); setEditPaymentInvoice(null); }} className="p-1 text-sky-400 hover:text-sky-500 rounded-lg border border-sky-100">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSavePaymentEdit} className="flex-1 overflow-y-auto py-4 space-y-4 pr-1 text-xs font-semibold">
+                  <div>
+                    <p className="text-sky-400 font-bold uppercase">Campaign Name</p>
+                    <p className="text-sky-600 text-sm mt-0.5 font-bold">{editPaymentInvoice.projectName}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sky-400 font-bold uppercase">Total Invoice Value</p>
+                      <p className="text-sky-900 text-sm mt-0.5 font-bold">${Number(editPaymentInvoice.total).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-sky-400 font-bold uppercase">Currently Paid</p>
+                      <p className="text-emerald-600 text-sm mt-0.5 font-bold">${Number(editPaymentInvoice.amountPaid).toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sky-500 mb-1">Select Payment Status</label>
+                    <select
+                      value={editPaymentStatus}
+                      onChange={(e) => setEditPaymentStatus(e.target.value)}
+                      className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
+                    >
+                      <option value="Paid">Fully Received / Completed</option>
+                      <option value="Partial">Partially Received</option>
+                      <option value="Due">Outstanding / Unpaid</option>
+                    </select>
+                  </div>
+
+                  {editPaymentStatus === "Partial" && (
+                    <div>
+                      <label className="block text-sky-500 mb-1">Amount to Add ($)</label>
+                      <input
+                        type="number"
+                        required
+                        value={editPaymentAmount}
+                        onChange={(e) => setEditPaymentAmount(e.target.value)}
+                        placeholder={`Remaining: $${(Number(editPaymentInvoice.total) - Number(editPaymentInvoice.amountPaid)).toLocaleString()}`}
+                        className="w-full p-2 border border-sky-100 rounded-xl"
+                      />
+                    </div>
+                  )}
+
+                  {editPaymentStatus !== "Due" && (
+                    <>
+                      <div>
+                        <label className="block text-sky-500 mb-1">Payment Method</label>
+                        <select
+                          value={editPaymentMethod}
+                          onChange={(e) => setEditPaymentMethod(e.target.value)}
+                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
+                        >
+                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="Credit Card">Credit Card</option>
+                          <option value="Cheque">Cheque</option>
+                          <option value="Cash">Cash</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sky-500 mb-1">Payment Notes</label>
+                        <textarea
+                          value={editPaymentNotes}
+                          onChange={(e) => setEditPaymentNotes(e.target.value)}
+                          placeholder="Reference number, wire details, external payment reference..."
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                          rows={3}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div className="pt-4 border-t border-sky-50 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setEditPaymentOpen(false); setEditPaymentInvoice(null); }}
+                      className="px-4 py-2 border border-sky-100 text-sky-500 rounded-xl"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-sky-500 text-white rounded-xl font-bold shadow hover:bg-sky-600 transition-all"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

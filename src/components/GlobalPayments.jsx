@@ -20,6 +20,33 @@ export default function GlobalPayments() {
   const [submitError, setSubmitError] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
+  // Personnel Payout States
+  const [recordType, setRecordType] = useState("client_payment"); // client_payment, personnel_payout, or create_invoice
+  const [payoutName, setPayoutName] = useState("");
+  const [payoutDate, setPayoutDate] = useState(new Date().toISOString().split("T")[0]);
+  const [payoutAmount, setPayoutAmount] = useState("");
+  const [payoutRemaining, setPayoutRemaining] = useState("");
+  const [payoutMethod, setPayoutMethod] = useState("Bank Transfer");
+  const [payoutNotes, setPayoutNotes] = useState("");
+
+  // Create Manual Invoice States
+  const [createInvClientId, setCreateInvClientId] = useState("");
+  const [createInvNum, setCreateInvNum] = useState("");
+  const [createInvDescription, setCreateInvDescription] = useState("Software and App Development");
+  const [createInvAmount, setCreateInvAmount] = useState("");
+  const [createInvDue, setCreateInvDue] = useState("");
+  const [createInvIncludeHST, setCreateInvIncludeHST] = useState(true);
+
+  // Auto populate invoice generation number & due date
+  useEffect(() => {
+    if (recordType === "create_invoice" && !createInvNum) {
+      setCreateInvNum(`MM-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(Math.floor(100 + Math.random() * 900))}`);
+      const d = new Date();
+      d.setDate(d.getDate() + 30);
+      setCreateInvDue(d.toISOString().split("T")[0]);
+    }
+  }, [recordType, createInvNum]);
+
   // Observers
   useEffect(() => {
     if (!currentUser || (role !== "admin" && role !== "manager")) return;
@@ -45,6 +72,12 @@ export default function GlobalPayments() {
       unsubInvoices();
     };
   }, [currentUser, role]);
+
+  useEffect(() => {
+    const handleToggle = () => setIsOpen((prev) => !prev);
+    window.addEventListener("toggle-global-payments", handleToggle);
+    return () => window.removeEventListener("toggle-global-payments", handleToggle);
+  }, []);
 
   if (!currentUser || (role !== "admin" && role !== "manager")) return null;
 
@@ -73,76 +106,147 @@ export default function GlobalPayments() {
     setSubmitError("");
     setSubmitSuccess(false);
 
-    if (!payInvId || !payAmount) {
-      setSubmitError("Please select an invoice and enter amount.");
-      return;
-    }
-
-    try {
-      const amount = Number(payAmount);
-      const targetInvoice = invoices.find((i) => i.id === payInvId);
-      if (!targetInvoice) {
-        setSubmitError("Selected invoice not found.");
+    if (recordType === "client_payment") {
+      if (!payInvId || !payAmount) {
+        setSubmitError("Please select an invoice and enter amount.");
         return;
       }
 
-      const nextPaid = (Number(targetInvoice.amountPaid) || 0) + amount;
-      const nextBal = Math.max(0, Number(targetInvoice.total) - nextPaid);
-      const nextStatus = nextBal <= 0 ? "Paid" : "Sent";
+      try {
+        const amount = Number(payAmount);
+        const targetInvoice = invoices.find((i) => i.id === payInvId);
+        if (!targetInvoice) {
+          setSubmitError("Selected invoice not found.");
+          return;
+        }
 
-      // 1. Add Payment record
-      await addDoc(collection(db, "payments"), {
-        invoiceId: payInvId,
-        clientId: targetInvoice.clientId,
-        amount,
-        dateReceived: new Date().toISOString().split("T")[0],
-        method: payMethod,
-        notes: payNotes || "",
-      });
+        const nextPaid = (Number(targetInvoice.amountPaid) || 0) + amount;
+        const nextBal = Math.max(0, Number(targetInvoice.total) - nextPaid);
+        const nextStatus = nextBal <= 0 ? "Received" : "Partial";
 
-      // 2. Update parent invoice totals
-      await updateDoc(doc(db, "invoices", payInvId), {
-        amountPaid: nextPaid,
-        balance: nextBal,
-        status: nextStatus,
-      });
-
-      // 3. Update client total paid
-      const clientRef = doc(db, "clients", targetInvoice.clientId);
-      const clientDoc = await getDoc(clientRef);
-      if (clientDoc.exists()) {
-        const clientData = clientDoc.data();
-        const prevPaid = Number(clientData.financials?.totalPaid) || 0;
-        await updateDoc(clientRef, {
-          "financials.totalPaid": prevPaid + amount,
-          "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
+        // 1. Add Payment record
+        await addDoc(collection(db, "payments"), {
+          invoiceId: payInvId,
+          clientId: targetInvoice.clientId,
+          amount,
+          dateReceived: new Date().toISOString().split("T")[0],
+          method: payMethod,
+          notes: payNotes || "",
         });
+
+        // 2. Update parent invoice totals
+        await updateDoc(doc(db, "invoices", payInvId), {
+          amountPaid: nextPaid,
+          balance: nextBal,
+          status: nextStatus,
+        });
+
+        // 3. Update client total paid
+        const clientRef = doc(db, "clients", targetInvoice.clientId);
+        const clientDoc = await getDoc(clientRef);
+        if (clientDoc.exists()) {
+          const clientData = clientDoc.data();
+          const prevPaid = Number(clientData.financials?.totalPaid) || 0;
+          await updateDoc(clientRef, {
+            "financials.totalPaid": prevPaid + amount,
+            "financials.lastPaymentDate": new Date().toISOString().split("T")[0],
+          });
+        }
+
+        // Reset
+        setPayInvId("");
+        setPayAmount("");
+        setPayNotes("");
+        setSubmitSuccess(true);
+        setTimeout(() => setSubmitSuccess(false), 3000);
+      } catch (err) {
+        setSubmitError(err.message);
+      }
+    } else if (recordType === "create_invoice") {
+      if (!createInvClientId || !createInvNum || !createInvAmount) {
+        setSubmitError("Please fill in client, invoice number and amount.");
+        return;
       }
 
-      // Reset
-      setPayInvId("");
-      setPayAmount("");
-      setPayNotes("");
-      setSubmitSuccess(true);
-      setTimeout(() => setSubmitSuccess(false), 3000);
-    } catch (err) {
-      setSubmitError(err.message);
+      try {
+        const amount = Number(createInvAmount);
+        const parentClient = clients.find((c) => c.id === createInvClientId);
+        const taxRate = createInvIncludeHST ? (parentClient?.financials?.taxRate ?? 13) : 0;
+        const tax = Number(((amount * taxRate) / 100).toFixed(2));
+        const total = amount + tax;
+
+        const payload = {
+          invoiceNumber: createInvNum,
+          clientId: createInvClientId,
+          projectId: "", // Manual invoice
+          invoiceDate: new Date().toISOString().split("T")[0],
+          dueDate: createInvDue || new Date().toISOString().split("T")[0],
+          amount,
+          tax,
+          total,
+          amountPaid: 0,
+          balance: total,
+          status: "Due",
+          paymentMethod: parentClient?.financials?.paymentMethod || "Bank Transfer",
+          receiptUrl: "",
+          notes: "Manually created via Quick Record drawer.",
+          description: createInvDescription || "Software and App Development",
+          clientName: parentClient?.businessName || "",
+          clientAttention: parentClient?.contactPerson || "",
+          clientEmail: parentClient?.email || "",
+          craNumber: parentClient?.financials?.craNumber || "777790411",
+          hstNumber: parentClient?.financials?.hstRegistration || "777790411 RT 0001",
+          fromCompanyName: "14689941 Canada Inc.",
+          fromBrandName: "Operating as Monk Media",
+          fromEmail: "info@monkmedia.ca"
+        };
+
+        await addDoc(collection(db, "invoices"), payload);
+
+        // Reset
+        setCreateInvClientId("");
+        setCreateInvNum("");
+        setCreateInvDescription("Software and App Development");
+        setCreateInvAmount("");
+        setCreateInvDue("");
+        setSubmitSuccess(true);
+        setTimeout(() => setSubmitSuccess(false), 3000);
+      } catch (err) {
+        setSubmitError(err.message);
+      }
+    } else {
+      // Personnel Payout
+      if (!payoutName || !payoutAmount) {
+        setSubmitError("Please enter name and payout amount.");
+        return;
+      }
+
+      try {
+        await addDoc(collection(db, "payouts"), {
+          name: payoutName,
+          date: payoutDate || new Date().toISOString().split("T")[0],
+          amount: Number(payoutAmount) || 0,
+          remainingBalance: Number(payoutRemaining) || 0,
+          method: payoutMethod,
+          notes: payoutNotes || "",
+          createdAt: new Date().toISOString()
+        });
+
+        // Reset
+        setPayoutName("");
+        setPayoutAmount("");
+        setPayoutRemaining("");
+        setPayoutNotes("");
+        setSubmitSuccess(true);
+        setTimeout(() => setSubmitSuccess(false), 3000);
+      } catch (err) {
+        setSubmitError(err.message);
+      }
     }
   };
 
   return (
     <>
-      {/* Floating Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-36 right-6 z-[999] p-3.5 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-full shadow-2xl hover:scale-105 transition-all duration-300 group"
-        title="Quick Record Payment"
-      >
-        <div className="relative">
-          <DollarSign className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-        </div>
-      </button>
-
       {/* Drawer */}
       {isOpen && (
         <div className="fixed inset-0 z-[1000] flex justify-end bg-sky-950/20 backdrop-blur-xs">
@@ -178,44 +282,257 @@ export default function GlobalPayments() {
                   </div>
                 )}
 
-                <form onSubmit={handleQuickPayment} className="space-y-4">
-                  <div>
-                    <label className="block text-sky-500 mb-1">Select Outstanding Invoice</label>
-                    {unpaidInvoices.length === 0 ? (
-                      <div className="p-4 bg-sky-50/20 text-sky-400 text-center rounded-2xl border border-sky-100/50 italic">
-                        No outstanding invoices found.
-                      </div>
-                    ) : (
-                      <select
-                        value={payInvId}
-                        required
-                        onChange={(e) => {
-                          setPayInvId(e.target.value);
-                          const target = unpaidInvoices.find((i) => i.id === e.target.value);
-                          if (target) setPayAmount(target.balance);
-                        }}
-                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
-                      >
-                        <option value="">Choose invoice...</option>
-                        {unpaidInvoices.map((inv) => (
-                          <option key={inv.id} value={inv.id}>
-                            {inv.invoiceNumber} - {getClientName(inv.clientId)} (${Number(inv.balance).toLocaleString()} due)
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+                {/* Record Type Switcher Toggle */}
+                <div className="flex bg-sky-50 p-1 rounded-xl mb-4 text-[9px] select-none gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setRecordType("client_payment")}
+                    className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+                      recordType === "client_payment"
+                        ? "bg-white text-sky-600 shadow-sm"
+                        : "text-sky-400 hover:text-sky-500"
+                    }`}
+                  >
+                    Client Payment
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRecordType("create_invoice")}
+                    className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+                      recordType === "create_invoice"
+                        ? "bg-white text-sky-600 shadow-sm"
+                        : "text-sky-400 hover:text-sky-500"
+                    }`}
+                  >
+                    Manual Invoice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRecordType("personnel_payout")}
+                    className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+                      recordType === "personnel_payout"
+                        ? "bg-white text-sky-600 shadow-sm"
+                        : "text-sky-400 hover:text-sky-500"
+                    }`}
+                  >
+                    Personnel Payout
+                  </button>
+                </div>
 
-                  {unpaidInvoices.length > 0 && (
+                <form onSubmit={handleQuickPayment} className="space-y-4">
+                  {recordType === "client_payment" && (
                     <>
                       <div>
-                        <label className="block text-sky-500 mb-1">Payment Amount ($)</label>
+                        <label className="block text-sky-500 mb-1">Select Outstanding Invoice</label>
+                        {unpaidInvoices.length === 0 ? (
+                          <div className="p-4 bg-sky-50/20 text-sky-400 text-center rounded-2xl border border-sky-100/50 italic">
+                            No outstanding invoices found.
+                          </div>
+                        ) : (
+                          <select
+                            value={payInvId}
+                            required
+                            onChange={(e) => {
+                              setPayInvId(e.target.value);
+                              const target = unpaidInvoices.find((i) => i.id === e.target.value);
+                              if (target) setPayAmount(target.balance);
+                            }}
+                            className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
+                          >
+                            <option value="">Choose invoice...</option>
+                            {unpaidInvoices.map((inv) => (
+                              <option key={inv.id} value={inv.id}>
+                                {inv.invoiceNumber} - {getClientName(inv.clientId)} (${Number(inv.balance).toLocaleString()} due)
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      {unpaidInvoices.length > 0 && (
+                        <>
+                          <div>
+                            <label className="block text-sky-500 mb-1">Payment Amount ($)</label>
+                            <input
+                              type="number"
+                              required
+                              value={payAmount}
+                              onChange={(e) => setPayAmount(e.target.value)}
+                              placeholder="e.g. 1500"
+                              className="w-full p-2 border border-sky-100 rounded-xl"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sky-500 mb-1">Payment Method</label>
+                            <select
+                              value={payMethod}
+                              onChange={(e) => setPayMethod(e.target.value)}
+                              className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
+                            >
+                              <option value="Bank Transfer">Bank Transfer</option>
+                              <option value="Credit Card">Credit Card</option>
+                              <option value="Cheque">Cheque</option>
+                              <option value="Cash">Cash</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sky-500 mb-1">Internal Notes</label>
+                            <textarea
+                              value={payNotes}
+                              onChange={(e) => setPayNotes(e.target.value)}
+                              placeholder="Reference number, bank wire code, notes..."
+                              className="w-full p-2 border border-sky-100 rounded-xl"
+                              rows={3}
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-all shadow-md hover:shadow-lg"
+                          >
+                            Record Payment
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {recordType === "create_invoice" && (
+                    <>
+                      <div>
+                        <label className="block text-sky-500 mb-1">Select Client</label>
+                        <select
+                          value={createInvClientId}
+                          required
+                          onChange={(e) => setCreateInvClientId(e.target.value)}
+                          className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
+                        >
+                          <option value="">Choose a Client...</option>
+                          {scopedClients.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.businessName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sky-500 mb-1">Invoice Number</label>
+                        <input
+                          type="text"
+                          required
+                          value={createInvNum}
+                          onChange={(e) => setCreateInvNum(e.target.value)}
+                          placeholder="e.g. MM-2026-08-01"
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sky-500 mb-1">Invoice Item / Description</label>
+                        <input
+                          type="text"
+                          required
+                          value={createInvDescription}
+                          onChange={(e) => setCreateInvDescription(e.target.value)}
+                          placeholder="e.g. Software and App Development"
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sky-500 mb-1">Billing Amount ($)</label>
                         <input
                           type="number"
                           required
-                          value={payAmount}
-                          onChange={(e) => setPayAmount(e.target.value)}
+                          value={createInvAmount}
+                          onChange={(e) => setCreateInvAmount(e.target.value)}
                           placeholder="e.g. 1500"
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sky-500 mb-1">Due Date</label>
+                        <input
+                          type="date"
+                          required
+                          value={createInvDue}
+                          onChange={(e) => setCreateInvDue(e.target.value)}
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 py-1">
+                        <input
+                          type="checkbox"
+                          id="createInvIncludeHST"
+                          checked={createInvIncludeHST}
+                          onChange={(e) => setCreateInvIncludeHST(e.target.checked)}
+                          className="w-4 h-4 rounded text-sky-500 border-sky-200 focus:ring-sky-500 cursor-pointer"
+                        />
+                        <label htmlFor="createInvIncludeHST" className="text-sky-500 cursor-pointer select-none font-bold text-xs">
+                          Include HST / Tax (13%)
+                        </label>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-all shadow-md hover:shadow-lg mt-2"
+                      >
+                        Create Manual Invoice
+                      </button>
+                    </>
+                  )}
+
+                  {recordType === "personnel_payout" && (
+                    <>
+                      <div>
+                        <label className="block text-sky-500 mb-1">Person Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={payoutName}
+                          onChange={(e) => setPayoutName(e.target.value)}
+                          placeholder="e.g. John Doe (Contractor)"
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sky-500 mb-1">Date of Payment</label>
+                        <input
+                          type="date"
+                          required
+                          value={payoutDate}
+                          onChange={(e) => setPayoutDate(e.target.value)}
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sky-500 mb-1">Amount Paid ($)</label>
+                        <input
+                          type="number"
+                          required
+                          value={payoutAmount}
+                          onChange={(e) => setPayoutAmount(e.target.value)}
+                          placeholder="e.g. 1200"
+                          className="w-full p-2 border border-sky-100 rounded-xl"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sky-500 mb-1">Remaining Amount to Pay ($)</label>
+                        <input
+                          type="number"
+                          required
+                          value={payoutRemaining}
+                          onChange={(e) => setPayoutRemaining(e.target.value)}
+                          placeholder="e.g. 300"
                           className="w-full p-2 border border-sky-100 rounded-xl"
                         />
                       </div>
@@ -223,8 +540,8 @@ export default function GlobalPayments() {
                       <div>
                         <label className="block text-sky-500 mb-1">Payment Method</label>
                         <select
-                          value={payMethod}
-                          onChange={(e) => setPayMethod(e.target.value)}
+                          value={payoutMethod}
+                          onChange={(e) => setPayoutMethod(e.target.value)}
                           className="w-full p-2 border border-sky-100 rounded-xl text-sky-600 bg-white"
                         >
                           <option value="Bank Transfer">Bank Transfer</option>
@@ -236,11 +553,11 @@ export default function GlobalPayments() {
                       </div>
 
                       <div>
-                        <label className="block text-sky-500 mb-1">Internal Notes</label>
+                        <label className="block text-sky-500 mb-1">Notes</label>
                         <textarea
-                          value={payNotes}
-                          onChange={(e) => setPayNotes(e.target.value)}
-                          placeholder="Reference number, bank wire code, notes..."
+                          value={payoutNotes}
+                          onChange={(e) => setPayoutNotes(e.target.value)}
+                          placeholder="Payout details, invoice reference, etc..."
                           className="w-full p-2 border border-sky-100 rounded-xl"
                           rows={3}
                         />
@@ -250,7 +567,7 @@ export default function GlobalPayments() {
                         type="submit"
                         className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-all shadow-md hover:shadow-lg"
                       >
-                        Record Payment
+                        Record Payout
                       </button>
                     </>
                   )}

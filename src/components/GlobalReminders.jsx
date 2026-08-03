@@ -69,6 +69,12 @@ export default function GlobalReminders() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleToggle = () => setIsOpen((prev) => !prev);
+    window.addEventListener("toggle-global-reminders", handleToggle);
+    return () => window.removeEventListener("toggle-global-reminders", handleToggle);
+  }, []);
+
   // Fetch tasks for active user
   useEffect(() => {
     if (!currentUser) return;
@@ -146,28 +152,26 @@ export default function GlobalReminders() {
   useEffect(() => {
     if (!isAlarmsLoaded || activeAlarm) return;
 
-    if (activeOverdueAlarms.length > 0) {
-      const pendingTask = activeOverdueAlarms[0];
+    if (activeOverdueAlarms.length > 0 || activeOverdueInvoiceAlarms.length > 0) {
+      const taskNotes = activeOverdueAlarms.map((t) => `• Task: "${t.name}" (Due: ${t.dueDate})`).join("\n");
+      const invNotes = activeOverdueInvoiceAlarms.map((inv) => `• Invoice #${inv.invoiceNumber} for "${inv.clientName || 'General'}" (Due: ${inv.dueDate})`).join("\n");
+      
+      const combinedNotes = [
+        activeOverdueAlarms.length > 0 ? `Overdue Tasks (${activeOverdueAlarms.length}):\n${taskNotes}` : "",
+        activeOverdueInvoiceAlarms.length > 0 ? `Overdue Invoices (${activeOverdueInvoiceAlarms.length}):\n${invNotes}` : ""
+      ].filter(Boolean).join("\n\n");
+
       setActiveAlarm({
-        id: `task-alarm-${pendingTask.id}`,
-        isTask: true,
-        taskId: pendingTask.id,
-        title: `Automatic Alarm: Pending Task Overdue!`,
-        triggerTime: pendingTask.dueDate,
-        notes: `Task "${pendingTask.name}" has an active pendency state (Not Completed or Cancelled) and its deadline of ${pendingTask.dueDate} is reached or passed.`
-      });
-    } else if (activeOverdueInvoiceAlarms.length > 0) {
-      const pendingInvoice = activeOverdueInvoiceAlarms[0];
-      setActiveAlarm({
-        id: `invoice-alarm-${pendingInvoice.id}`,
-        isInvoice: true,
-        invoiceId: pendingInvoice.id,
-        title: `Collection Alarm: Invoice Overdue!`,
-        triggerTime: pendingInvoice.dueDate,
-        notes: `Invoice #${pendingInvoice.invoiceNumber} for client "${pendingInvoice.clientName || 'General'}" has an outstanding balance of $${Number(pendingInvoice.balance).toLocaleString()} and exceeded its due date of ${pendingInvoice.dueDate}.`
+        id: `combined-alarm-${Date.now()}`,
+        isCombined: true,
+        taskIds: activeOverdueAlarms.map((t) => t.id),
+        invoiceIds: activeOverdueInvoiceAlarms.map((inv) => inv.id),
+        title: `Overdue Alerts: ${totalOverdueCount} Pending Items!`,
+        triggerTime: new Date().toLocaleDateString(),
+        notes: combinedNotes
       });
     }
-  }, [activeOverdueAlarms.length, activeOverdueInvoiceAlarms.length, activeAlarm, isAlarmsLoaded]);
+  }, [activeOverdueAlarms.length, activeOverdueInvoiceAlarms.length, activeAlarm, isAlarmsLoaded, totalOverdueCount]);
 
   // Web Audio Alarm Chime Loop wrapped in safety handlers
   useEffect(() => {
@@ -241,6 +245,16 @@ export default function GlobalReminders() {
     }
   };
 
+  const handleDismissCombinedAlarm = (taskIds, invoiceIds) => {
+    if (taskIds && taskIds.length > 0) {
+      setDismissedTaskAlarms((prev) => [...prev, ...taskIds]);
+    }
+    if (invoiceIds && invoiceIds.length > 0) {
+      setDismissedInvoiceAlarms((prev) => [...prev, ...invoiceIds]);
+    }
+    setActiveAlarm(null);
+  };
+
   const handleClearDismissed = () => {
     setDismissedTaskAlarms([]);
     setDismissedInvoiceAlarms([]);
@@ -250,25 +264,6 @@ export default function GlobalReminders() {
 
   return (
     <>
-      {/* Floating Bell Trigger */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-20 right-6 z-[999] p-3.5 bg-gradient-to-r from-sky-400 to-[#348eab] text-white rounded-full shadow-2xl hover:scale-105 transition-all duration-300 group"
-        title="Active CRM Pendencies"
-      >
-        <div className="relative">
-          <Bell className="w-5 h-5 group-hover:animate-bounce" />
-          {totalOverdueCount > 0 && (
-            <span className="absolute -top-3.5 -right-3.5 flex flex-col items-center justify-center rounded-2xl bg-red-500 text-[8px] font-black text-white px-2 py-1 ring-2 ring-white shadow-lg animate-pulse whitespace-nowrap leading-none min-w-[28px]">
-              <div>{totalOverdueCount}</div>
-              <div className="text-[6px] font-medium scale-90 mt-0.5 opacity-90">
-                {activeOverdueAlarms.length}T / {activeOverdueInvoiceAlarms.length}I
-              </div>
-            </span>
-          )}
-        </div>
-      </button>
-
       {/* Slide-out reminders panel */}
       {isOpen && (
         <div className="fixed inset-0 z-[1000] flex justify-end bg-sky-950/20 backdrop-blur-xs">
@@ -416,52 +411,67 @@ export default function GlobalReminders() {
         </div>
       )}
 
-      {/* Alarm ringing popup detail view */}
+      {/* Alarm ringing popup detail view - rendered as a premium non-blocking floating alert card */}
       {activeAlarm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-sky-950/70 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white border border-sky-100 rounded-3xl shadow-2xl max-w-md w-full p-6 text-center space-y-4 animate-scale-up">
-            
+        <div className="fixed bottom-24 right-6 z-[99999] max-w-sm w-full p-4 bg-white border border-red-100 rounded-3xl shadow-2xl animate-slide-in-right space-y-3.5">
+          <div className="flex items-start gap-3">
             {/* Bell animation */}
-            <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto border border-red-100 relative">
+            <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center border border-red-100 relative flex-shrink-0">
               <span className="absolute inset-0 rounded-full bg-red-400/30 animate-ping"></span>
-              <Bell className="w-8 h-8 animate-bounce" />
+              <Bell className="w-5 h-5 animate-bounce" />
             </div>
 
             {/* Title / Detail View */}
-            <div className="space-y-1">
-              <span className="text-[9px] bg-red-100 text-red-600 font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                Event Alert Ringing
-              </span>
-              <h2 className="text-xl font-black text-sky-600 pt-2">{activeAlarm.title}</h2>
-              <p className="text-[10px] text-sky-400 font-bold uppercase tracking-wider flex items-center justify-center gap-1">
-                <Clock className="w-3.5 h-3.5" />
-                Deadline was {activeAlarm.triggerTime}
-              </p>
-            </div>
-
-            {activeAlarm.notes && (
-              <div className="p-4 bg-sky-50/50 rounded-2xl border border-sky-100 text-xs text-sky-600 text-left font-medium leading-relaxed max-h-[150px] overflow-y-auto">
-                <h4 className="text-[9px] uppercase tracking-widest font-black text-sky-500 mb-1">Details / Notes</h4>
-                {activeAlarm.notes}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[8px] bg-red-100 text-red-600 font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  Alert Ringing
+                </span>
+                <span className="text-[8px] text-sky-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Deadline: {activeAlarm.triggerTime}
+                </span>
               </div>
-            )}
-
-            {/* Cancel/Dismiss Controls */}
-            <div className="pt-2 flex flex-col gap-2">
-              <button
-                onClick={() => {
-                  if (activeAlarm.isTask) {
-                    handleDismissTask(activeAlarm.taskId);
-                  } else if (activeAlarm.isInvoice) {
-                    handleDismissInvoice(activeAlarm.invoiceId);
-                  }
-                }}
-                className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-2xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1.5"
-              >
-                <Volume2 className="w-4 h-4" /> Silence & Dismiss Alert
-              </button>
+              <h2 className="text-xs font-black text-sky-600 pt-1.5 truncate">{activeAlarm.title}</h2>
+              {activeAlarm.notes && (
+                <p className="text-[10px] text-sky-400 font-medium line-clamp-2 mt-1">
+                  {activeAlarm.notes}
+                </p>
+              )}
             </div>
+
+            {/* Close trigger button */}
+            <button
+              onClick={() => {
+                if (activeAlarm.isCombined) {
+                  handleDismissCombinedAlarm(activeAlarm.taskIds, activeAlarm.invoiceIds);
+                } else if (activeAlarm.isTask) {
+                  handleDismissTask(activeAlarm.taskId);
+                } else if (activeAlarm.isInvoice) {
+                  handleDismissInvoice(activeAlarm.invoiceId);
+                }
+              }}
+              className="p-1 hover:bg-sky-50 text-sky-400 hover:text-sky-500 rounded-lg transition"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
+
+          {/* Action Button */}
+          <button
+            onClick={() => {
+              if (activeAlarm.isCombined) {
+                handleDismissCombinedAlarm(activeAlarm.taskIds, activeAlarm.invoiceIds);
+              } else if (activeAlarm.isTask) {
+                handleDismissTask(activeAlarm.taskId);
+              } else if (activeAlarm.isInvoice) {
+                handleDismissInvoice(activeAlarm.invoiceId);
+              }
+            }}
+            className="w-full py-2 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-xl text-[10px] font-black transition-all shadow-md flex items-center justify-center gap-1.5"
+          >
+            <Volume2 className="w-3.5 h-3.5" /> Silence & Dismiss Alert
+          </button>
         </div>
       )}
     </>
