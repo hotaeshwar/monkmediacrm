@@ -539,7 +539,7 @@ export default function ClientsPage() {
                     <th className="py-4 px-6">Business Name</th>
                     <th className="py-4 px-6">Contact Person</th>
                     <th className="py-4 px-6">Industry</th>
-                    <th className="py-4 px-6">Joined Date</th>
+                    <th className="py-4 px-6 whitespace-nowrap">Joined Date</th>
                     <th className="py-4 px-6">Retainer</th>
                     <th className="py-4 px-6">Campaign Value</th>
                     <th className="py-4 px-6">Status</th>
@@ -561,7 +561,7 @@ export default function ClientsPage() {
                         <span className="text-[10px] text-sky-400 font-medium">{c.email}</span>
                       </td>
                       <td className="py-4.5 px-6 capitalize">{c.industry}</td>
-                      <td className="py-4.5 px-6">{c.dateJoined}</td>
+                      <td className="py-4.5 px-6 whitespace-nowrap">{c.dateJoined}</td>
                       <td className="py-4.5 px-6 text-sky-600 font-semibold">
                         {(role === "admin" || role === "manager" || role === "client")
                           ? `$${(c.financials?.monthlyRetainer || 0).toLocaleString()}`
@@ -613,13 +613,38 @@ export default function ClientsPage() {
                             View Profile
                           </Link>
                           {role === "admin" && (
-                            <button
-                              onClick={() => handleDeleteClient(c.id)}
-                              className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-all"
-                              title="Delete Client"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const nextStatus = c.status === "Archived" ? "Active" : "Archived";
+                                  if (confirm(`Are you sure you want to ${nextStatus === "Archived" ? "archive" : "restore"} this client?`)) {
+                                    try {
+                                      await updateDoc(doc(db, "clients", c.id), { status: nextStatus });
+                                      fetchData();
+                                    } catch (err) {
+                                      alert("Error: " + err.message);
+                                    }
+                                  }
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all whitespace-nowrap inline-block text-center shadow-sm border ${
+                                  c.status === "Archived"
+                                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-100"
+                                    : "bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-100"
+                                }`}
+                              >
+                                {c.status === "Archived" ? "Restore" : "Archive"}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteClient(c.id)}
+                                className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-all"
+                                title="Delete Client"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
