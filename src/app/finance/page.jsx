@@ -575,11 +575,18 @@ export default function FinancePage() {
     if (!editInvId || !editInvNum || !editInvAmount) return;
 
     try {
+      const inv = invoices.find(i => i.id === editInvId);
+      const isOriginallyFullyPaid = inv && (inv.status === "Received" || inv.status === "Paid" || (Number(inv.balance) || 0) <= 0);
+
       const amount = Number(editInvAmount);
       const tax = Number(((amount * editInvTaxPercent) / 100).toFixed(2));
       const total = amount + tax;
       
-      const amountPaid = Number(editInvAmountPaid) || 0;
+      let amountPaid = Number(editInvAmountPaid) || 0;
+      if (isOriginallyFullyPaid) {
+        amountPaid = total;
+      }
+      
       const balance = Math.max(0, total - amountPaid);
       const status = balance <= 0 ? "Received" : amountPaid > 0 ? "Partial" : "Due";
 
@@ -606,9 +613,74 @@ export default function FinancePage() {
       };
 
       if (editInvId.startsWith("sim-inv-")) {
-        await addDoc(collection(db, "invoices"), updatePayload);
+        // For new simulated invoice doc, if it is fully paid, let's create a placeholder id first
+        const newDocRef = await addDoc(collection(db, "invoices"), updatePayload);
+        
+        // Log a payment in the payments collection if amountPaid > 0
+        if (amountPaid > 0) {
+          await addDoc(collection(db, "payments"), {
+            invoiceId: newDocRef.id,
+            clientId: editInvClientId || "",
+            amount: amountPaid,
+            dateReceived: new Date().toISOString().split("T")[0],
+            method: "Other",
+            notes: `Initial payment logged during invoice creation for #${editInvNum}`
+          });
+
+          // Update client totalPaid
+          if (editInvClientId) {
+            const clientRef = doc(db, "clients", editInvClientId);
+            const clientDoc = await getDoc(clientRef);
+            if (clientDoc.exists()) {
+              const currentTotalPaid = Number(clientDoc.data().financials?.totalPaid) || 0;
+              await updateDoc(clientRef, {
+                "financials.totalPaid": Math.max(0, currentTotalPaid + amountPaid),
+                "financials.lastPaymentDate": new Date().toISOString().split("T")[0]
+              });
+            }
+          }
+        }
       } else {
         await updateDoc(doc(db, "invoices", editInvId), updatePayload);
+
+        // Synchronize payments collection and client financials
+        if (inv) {
+          const prevPaid = Number(inv.amountPaid) || 0;
+          const diff = amountPaid - prevPaid;
+
+          if (diff !== 0) {
+            if (amountPaid === 0) {
+              const qPay = query(collection(db, "payments"), where("invoiceId", "in", [editInvId, editInvNum]));
+              const snapPay = await getDocs(qPay);
+              const deletePromises = [];
+              snapPay.forEach((pDoc) => {
+                deletePromises.push(deleteDoc(doc(db, "payments", pDoc.id)));
+              });
+              await Promise.all(deletePromises);
+            } else {
+              await addDoc(collection(db, "payments"), {
+                invoiceId: editInvId,
+                clientId: editInvClientId || inv.clientId || "",
+                amount: diff,
+                dateReceived: new Date().toISOString().split("T")[0],
+                method: "Other",
+                notes: `Adjusted payment logged during invoice edit for #${editInvNum}`
+              });
+            }
+
+            if (editInvClientId || inv.clientId) {
+              const clientRef = doc(db, "clients", editInvClientId || inv.clientId);
+              const clientDoc = await getDoc(clientRef);
+              if (clientDoc.exists()) {
+                const currentTotalPaid = Number(clientDoc.data().financials?.totalPaid) || 0;
+                await updateDoc(clientRef, {
+                  "financials.totalPaid": Math.max(0, currentTotalPaid + diff),
+                  "financials.lastPaymentDate": new Date().toISOString().split("T")[0]
+                });
+              }
+            }
+          }
+        }
       }
 
       // Synchronize associated project/campaign status to Completed if fully paid
@@ -2616,8 +2688,7 @@ export default function FinancePage() {
                         required
                         value={editInvTaxPercent}
                         onChange={(e) => setEditInvTaxPercent(Number(e.target.value) || 0)}
-                        disabled={role !== "admin"}
-                        className={`w-full p-2 border border-sky-100 rounded-xl text-sky-600 ${role !== "admin" ? "opacity-60 cursor-not-allowed bg-slate-50" : ""}`}
+                        className="w-full p-2 border border-sky-100 rounded-xl text-sky-600"
                       />
                     </div>
                     <div>
