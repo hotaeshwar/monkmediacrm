@@ -48,14 +48,19 @@ export default function GlobalReminders() {
   const [invoices, setInvoices] = useState([]);
   const [dismissedInvoiceAlarms, setDismissedInvoiceAlarms] = useState([]);
   const [isAlarmsLoaded, setIsAlarmsLoaded] = useState(true);
+  const isDismissedRef = React.useRef(false);
 
   // Web Audio Context Autoplay Policy Unlock
   useEffect(() => {
     const resumeAudio = () => {
       try {
         const ctx = getAudioContext();
-        if (ctx && ctx.state === "suspended") {
-          ctx.resume();
+        if (ctx) {
+          ctx.resume().then(() => {
+            if (activeAlarm && !isDismissedRef.current && ctx.state === "running") {
+              playChimeTune();
+            }
+          });
         }
       } catch (e) {
         console.warn("Audio Context unlock error:", e);
@@ -67,7 +72,7 @@ export default function GlobalReminders() {
       window.removeEventListener("click", resumeAudio);
       window.removeEventListener("touchstart", resumeAudio);
     };
-  }, []);
+  }, [activeAlarm]);
 
   useEffect(() => {
     const handleToggle = () => setIsOpen((prev) => !prev);
@@ -161,6 +166,7 @@ export default function GlobalReminders() {
         activeOverdueInvoiceAlarms.length > 0 ? `Overdue Invoices (${activeOverdueInvoiceAlarms.length}):\n${invNotes}` : ""
       ].filter(Boolean).join("\n\n");
 
+      isDismissedRef.current = false;
       setActiveAlarm({
         id: `combined-alarm-${Date.now()}`,
         isCombined: true,
@@ -233,6 +239,7 @@ export default function GlobalReminders() {
 
   const handleDismissTask = (taskId) => {
     setDismissedTaskAlarms((prev) => [...prev, taskId]);
+    isDismissedRef.current = true;
     if (activeAlarm && activeAlarm.taskId === taskId) {
       setActiveAlarm(null);
     }
@@ -240,6 +247,7 @@ export default function GlobalReminders() {
 
   const handleDismissInvoice = (invoiceId) => {
     setDismissedInvoiceAlarms((prev) => [...prev, invoiceId]);
+    isDismissedRef.current = true;
     if (activeAlarm && activeAlarm.invoiceId === invoiceId) {
       setActiveAlarm(null);
     }
@@ -252,6 +260,7 @@ export default function GlobalReminders() {
     if (invoiceIds && invoiceIds.length > 0) {
       setDismissedInvoiceAlarms((prev) => [...prev, ...invoiceIds]);
     }
+    isDismissedRef.current = true;
     setActiveAlarm(null);
   };
 

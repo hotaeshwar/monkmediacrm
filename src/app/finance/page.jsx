@@ -1327,7 +1327,7 @@ export default function FinancePage() {
                     <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
                       <th className="p-4 px-6">Invoice #</th>
                       <th className="p-4 px-6">Client Name</th>
-                      <th className="p-4 px-6">Due Date</th>
+                      <th className="p-4 px-6 whitespace-nowrap">Due Date</th>
                       <th className="p-4 px-6 text-center">Status</th>
                       <th className="p-4 px-6 text-right">Total</th>
                       <th className="p-4 px-6 text-right">Campaign Value</th>
@@ -1354,7 +1354,7 @@ export default function FinancePage() {
                                 <span className="font-semibold text-sky-900">{getClientName(inv.clientId)}</span>
                               </div>
                             </td>
-                            <td className={`p-4 px-6 ${isOverdue ? "text-red-500 font-bold" : ""}`}>
+                            <td className={`p-4 px-6 whitespace-nowrap ${isOverdue ? "text-red-500 font-bold" : ""}`}>
                               {inv.dueDate}
                             </td>
                             <td className="p-4 px-6 text-center">
@@ -1473,7 +1473,8 @@ export default function FinancePage() {
                             </td>
                             <td className="p-4 px-6 text-right">${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 px-6 text-right font-bold">${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                            <td className="p-4 px-6 text-right flex items-center justify-end gap-2">
+                            <td className="p-4 px-6 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-2">
                                <button
                                  type="button"
                                  onClick={async (e) => {
@@ -1572,6 +1573,7 @@ export default function FinancePage() {
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
+                              </div>
                             </td>
                           </tr>
                         );
