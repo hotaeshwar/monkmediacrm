@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, getDoc, query, where, getDocs } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { ShieldAlert, TrendingUp, TrendingDown, DollarSign, Plus, Check, FileText, FileMinus, X, Printer, Download, Trash2, Edit2, AlertTriangle } from "lucide-react";
 import Loader from "@/components/Loader";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
@@ -793,7 +794,7 @@ export default function FinancePage() {
     }
   };
 
-  const handleDownloadPDF = async (inv) => {
+  const generateInvoicePDFDoc = async (inv) => {
     const client = getClientObj(inv.clientId);
     const statusStr = (inv.status || "Due").trim().toLowerCase();
     const isPaid = statusStr === "received" || statusStr === "paid";
@@ -802,7 +803,6 @@ export default function FinancePage() {
     const tax = Number(inv.tax) || 0;
     const total = Number(inv.total) || 0;
 
-    // Load logo as Base64 in memory using browser Image canvas resolution
     const loadLogo = () => {
       return new Promise((resolve) => {
         const img = new Image();
@@ -820,337 +820,322 @@ export default function FinancePage() {
     };
     const logoBase64 = await loadLogo();
 
-    try {
-      if (!window.jspdf || !window.jspdf.jsPDF) {
-        throw new Error("The PDF generation library is still loading from the CDN. Please try again in 2 seconds.");
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      throw new Error("The PDF generation library is still loading from the CDN. Please try again in 2 seconds.");
+    }
+    const { jsPDF } = window.jspdf;
+    const pdfDoc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4"
+    });
+
+    const pageWidth = pdfDoc.internal.pageSize.getWidth();
+    const pageHeight = pdfDoc.internal.pageSize.getHeight();
+    const leftMargin = 15;
+    const rightMargin = 15;
+    const contentWidth = pageWidth - leftMargin - rightMargin;
+    let yPos = 15;
+
+    pdfDoc.setFillColor(11, 34, 47);
+    pdfDoc.rect(leftMargin, yPos, contentWidth, 36, "F");
+    pdfDoc.setFillColor(52, 142, 171);
+    pdfDoc.rect(leftMargin, yPos + 36, contentWidth, 1.5, "F");
+
+    if (logoBase64) {
+      try {
+        pdfDoc.addImage(logoBase64, "PNG", leftMargin + 6, yPos + 4, 48, 28);
+      } catch (imgError) {
+        console.error("Error adding logo image to PDF:", imgError);
       }
-      const { jsPDF } = window.jspdf;
-      const pdfDoc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4"
-      });
-
-      const pageWidth = pdfDoc.internal.pageSize.getWidth();
-      const pageHeight = pdfDoc.internal.pageSize.getHeight();
-      const leftMargin = 15;
-      const rightMargin = 15;
-      const contentWidth = pageWidth - leftMargin - rightMargin; // 180mm
-      let yPos = 15;
-
-      // Header Banner (Navy blue background)
-      pdfDoc.setFillColor(11, 34, 47); // #0b222f
-      pdfDoc.rect(leftMargin, yPos, contentWidth, 36, "F");
-
-      // Accent Line (Cyan color border line)
-      pdfDoc.setFillColor(52, 142, 171); // #348eab
-      pdfDoc.rect(leftMargin, yPos + 36, contentWidth, 1.5, "F");
-
-      // Logo Image on Left
-      if (logoBase64) {
-        try {
-          pdfDoc.addImage(logoBase64, "PNG", leftMargin + 6, yPos + 4, 48, 28);
-        } catch (imgError) {
-          console.error("Error adding logo image to PDF:", imgError);
-        }
-      } else {
-        pdfDoc.setTextColor(255, 255, 255);
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(22);
-        pdfDoc.text("MONK MEDIA", leftMargin + 10, yPos + 22);
-      }
-
-      // Title & Metadata on Right
+    } else {
       pdfDoc.setTextColor(255, 255, 255);
       pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(16);
-      pdfDoc.text(isPaid ? "PAID INVOICE" : isPartial ? "PARTIAL INVOICE" : "INVOICE", leftMargin + contentWidth - 8, yPos + 11, { align: "right" });
+      pdfDoc.setFontSize(22);
+      pdfDoc.text("MONK MEDIA", leftMargin + 10, yPos + 22);
+    }
 
+    pdfDoc.setTextColor(255, 255, 255);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(16);
+    pdfDoc.text(isPaid ? "PAID INVOICE" : isPartial ? "PARTIAL INVOICE" : "INVOICE", leftMargin + contentWidth - 8, yPos + 11, { align: "right" });
+
+    pdfDoc.setFont("helvetica", "normal");
+    pdfDoc.setFontSize(8.5);
+    pdfDoc.setTextColor(229, 231, 235);
+    pdfDoc.text(`Invoice # ${inv.invoiceNumber}`, leftMargin + contentWidth - 8, yPos + 17, { align: "right" });
+    pdfDoc.text(`Invoice Date: ${formatDateFriendly(inv.invoiceDate)}`, leftMargin + contentWidth - 8, yPos + 22, { align: "right" });
+
+    let badgeColor = [245, 158, 11];
+    let badgeText = "DUE";
+    if (isPaid) {
+      badgeColor = [22, 163, 74];
+      badgeText = "RECEIVED";
+    } else if (isPartial) {
+      badgeColor = [14, 165, 233];
+      badgeText = "PARTIAL";
+    }
+
+    pdfDoc.setFillColor(...badgeColor);
+    pdfDoc.roundedRect(leftMargin + contentWidth - 38, yPos + 25.5, 30, 5.5, 1.5, 1.5, "F");
+    pdfDoc.setTextColor(255, 255, 255);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(7);
+    pdfDoc.text(badgeText, leftMargin + contentWidth - 23, yPos + 29.3, { align: "center" });
+
+    yPos += 50;
+
+    pdfDoc.setTextColor(52, 142, 171);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(9);
+    pdfDoc.text("FROM", leftMargin, yPos);
+    pdfDoc.text("BILL TO", leftMargin + 95, yPos);
+    pdfDoc.setDrawColor(229, 231, 235);
+    pdfDoc.setLineWidth(0.5);
+    pdfDoc.line(leftMargin, yPos + 2, leftMargin + 85, yPos + 2);
+    pdfDoc.line(leftMargin + 95, yPos + 2, leftMargin + contentWidth, yPos + 2);
+
+    yPos += 8;
+
+    pdfDoc.setTextColor(17, 24, 39);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(10);
+    pdfDoc.text(inv.fromCompanyName || "14689941 Canada Inc.", leftMargin, yPos);
+
+    pdfDoc.setTextColor(75, 85, 99);
+    pdfDoc.setFont("helvetica", "normal");
+    pdfDoc.setFontSize(8.5);
+    pdfDoc.text(inv.fromBrandName || "Operating as Monk Media", leftMargin, yPos + 4.5);
+    pdfDoc.text(`Email: ${inv.fromEmail || "info@monkmedia.ca"}`, leftMargin, yPos + 9);
+
+    if (inv.craNumber) {
+      pdfDoc.text(`CRA Business No: ${inv.craNumber}`, leftMargin, yPos + 13.5);
+    }
+    if (inv.hstNumber) {
+      pdfDoc.text(`HST Registration No: ${inv.hstNumber}`, leftMargin, yPos + 18);
+    }
+
+    const customClientName = inv.clientName || client?.businessName || "Client Business Name";
+    const customAttentionName = inv.clientAttention || client?.contactPerson || "Authorized Representative";
+    const customClientEmail = inv.clientEmail || client?.email || "";
+
+    pdfDoc.setTextColor(17, 24, 39);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(10);
+    pdfDoc.text(customClientName, leftMargin + 95, yPos);
+
+    pdfDoc.setTextColor(75, 85, 99);
+    pdfDoc.setFont("helvetica", "normal");
+    pdfDoc.setFontSize(8.5);
+    pdfDoc.text(`Attention: ${customAttentionName}`, leftMargin + 95, yPos + 4.5);
+    pdfDoc.text(`Email: ${customClientEmail}`, leftMargin + 95, yPos + 9);
+
+    yPos += 28;
+
+    pdfDoc.setFillColor(240, 249, 255);
+    pdfDoc.setDrawColor(224, 242, 254);
+    pdfDoc.setLineWidth(0.3);
+    pdfDoc.roundedRect(leftMargin, yPos, contentWidth, 18, 2, 2, "FD");
+
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(7.5);
+    pdfDoc.setTextColor(52, 142, 171);
+    pdfDoc.text("PAYMENT STATUS", leftMargin + 30, yPos + 5.5, { align: "center" });
+    pdfDoc.text(isPaid ? "PAYMENT DATE" : "DUE DATE", leftMargin + 90, yPos + 5.5, { align: "center" });
+    pdfDoc.text("AMOUNT PAID", leftMargin + 150, yPos + 5.5, { align: "center" });
+
+    pdfDoc.setDrawColor(186, 230, 253);
+    pdfDoc.line(leftMargin + 60, yPos + 2, leftMargin + 60, yPos + 16);
+    pdfDoc.line(leftMargin + 120, yPos + 2, leftMargin + 120, yPos + 16);
+
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(11);
+    if (isPaid) {
+      pdfDoc.setTextColor(22, 163, 74);
+      pdfDoc.text("RECEIVED", leftMargin + 30, yPos + 12.5, { align: "center" });
+    } else if (isPartial) {
+      pdfDoc.setTextColor(14, 165, 233);
+      pdfDoc.text("PARTIAL", leftMargin + 30, yPos + 12.5, { align: "center" });
+    } else {
+      pdfDoc.setTextColor(245, 158, 11);
+      pdfDoc.text("DUE", leftMargin + 30, yPos + 12.5, { align: "center" });
+    }
+
+    pdfDoc.setTextColor(17, 24, 39);
+    pdfDoc.setFontSize(10);
+    pdfDoc.text(formatDateFriendly(isPaid ? inv.invoiceDate : inv.dueDate), leftMargin + 90, yPos + 12.5, { align: "center" });
+    pdfDoc.text(`$${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD`, leftMargin + 150, yPos + 12.5, { align: "center" });
+
+    yPos += 30;
+
+    pdfDoc.setFillColor(11, 34, 47);
+    pdfDoc.rect(leftMargin, yPos, contentWidth, 9, "F");
+    
+    pdfDoc.setTextColor(255, 255, 255);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(8.5);
+    pdfDoc.text("DESCRIPTION", leftMargin + 5, yPos + 6);
+    pdfDoc.text("AMOUNT (CAD)", leftMargin + contentWidth - 5, yPos + 6, { align: "right" });
+
+    yPos += 9;
+    pdfDoc.setDrawColor(229, 231, 235);
+    pdfDoc.rect(leftMargin, yPos, contentWidth, 12);
+    
+    pdfDoc.setTextColor(17, 24, 39);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(9);
+    pdfDoc.text(inv.description || inv.projectName || inv.notes || "Software and App Development", leftMargin + 5, yPos + 7.5);
+    pdfDoc.text(`$${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos + 7.5, { align: "right" });
+
+    yPos += 22;
+
+    pdfDoc.setTextColor(107, 114, 128);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(9);
+    pdfDoc.text("Subtotal", leftMargin + contentWidth - 65, yPos);
+    pdfDoc.setFont("helvetica", "normal");
+    pdfDoc.text(`$${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+
+    if (tax > 0) {
+      yPos += 6;
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.text("HST (13%)", leftMargin + contentWidth - 65, yPos);
       pdfDoc.setFont("helvetica", "normal");
-      pdfDoc.setFontSize(8.5);
-      pdfDoc.setTextColor(229, 231, 235);
-      pdfDoc.text(`Invoice # ${inv.invoiceNumber}`, leftMargin + contentWidth - 8, yPos + 17, { align: "right" });
-      pdfDoc.text(`Invoice Date: ${formatDateFriendly(inv.invoiceDate)}`, leftMargin + contentWidth - 8, yPos + 22, { align: "right" });
+      pdfDoc.text(`$${tax.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+    }
 
-      // Status Badge (Received = Green, Partial = Blue, Due = Orange)
-      let badgeColor = [245, 158, 11];
-      let badgeText = "DUE";
-      if (isPaid) {
-        badgeColor = [22, 163, 74];
-        badgeText = "RECEIVED";
-      } else if (isPartial) {
-        badgeColor = [14, 165, 233];
-        badgeText = "PARTIAL";
-      }
+    yPos += 3;
+    pdfDoc.setDrawColor(229, 231, 235);
+    pdfDoc.line(leftMargin + contentWidth - 65, yPos + 1, leftMargin + contentWidth, yPos + 1);
 
-      pdfDoc.setFillColor(...badgeColor);
-      pdfDoc.roundedRect(leftMargin + contentWidth - 38, yPos + 25.5, 30, 5.5, 1.5, 1.5, "F");
-      pdfDoc.setTextColor(255, 255, 255);
+    yPos += 8;
+    pdfDoc.setTextColor(17, 24, 39);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(9.5);
+    pdfDoc.text("Gross Total", leftMargin + contentWidth - 65, yPos);
+    pdfDoc.text(`$${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+
+    yPos += 6.5;
+    pdfDoc.setTextColor(107, 114, 128);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(9);
+    pdfDoc.text("Amount Received", leftMargin + contentWidth - 65, yPos);
+    pdfDoc.setFont("helvetica", "normal");
+    pdfDoc.text(`$${(Number(inv.amountPaid) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+
+    yPos += 3;
+    pdfDoc.setDrawColor(229, 231, 235);
+    pdfDoc.line(leftMargin + contentWidth - 65, yPos + 1, leftMargin + contentWidth, yPos + 1);
+
+    yPos += 9;
+    const balanceVal = Math.max(0, total - (Number(inv.amountPaid) || 0));
+    if (balanceVal <= 0) {
+      pdfDoc.setTextColor(22, 163, 74);
       pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(7);
-      pdfDoc.text(badgeText, leftMargin + contentWidth - 23, yPos + 29.3, { align: "center" });
-
-      yPos += 50;
-
-      // Sender and Recipient Columns
-      pdfDoc.setTextColor(52, 142, 171); // #348eab
+      pdfDoc.setFontSize(12);
+      pdfDoc.text("REMAINING DUE", leftMargin + contentWidth - 65, yPos);
+      pdfDoc.text("$0.00", leftMargin + contentWidth - 5, yPos, { align: "right" });
+    } else {
+      pdfDoc.setTextColor(245, 158, 11);
       pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(9);
-      pdfDoc.text("FROM", leftMargin, yPos);
-      pdfDoc.text("BILL TO", leftMargin + 95, yPos);
+      pdfDoc.setFontSize(12);
+      pdfDoc.text("REMAINING DUE", leftMargin + contentWidth - 65, yPos);
+      pdfDoc.text(`$${balanceVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
+    }
 
-      // Section underline
-      pdfDoc.setDrawColor(229, 231, 235); // #e5e7eb
-      pdfDoc.setLineWidth(0.5);
-      pdfDoc.line(leftMargin, yPos + 2, leftMargin + 85, yPos + 2);
-      pdfDoc.line(leftMargin + 95, yPos + 2, leftMargin + contentWidth, yPos + 2);
+    yPos += 14;
 
-      yPos += 8;
-
-      // From Text Details
-      pdfDoc.setTextColor(17, 24, 39); // #111827
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(10);
-      pdfDoc.text(inv.fromCompanyName || "14689941 Canada Inc.", leftMargin, yPos);
-
-      pdfDoc.setTextColor(75, 85, 99); // #4b5563
-      pdfDoc.setFont("helvetica", "normal");
-      pdfDoc.setFontSize(8.5);
-      pdfDoc.text(inv.fromBrandName || "Operating as Monk Media", leftMargin, yPos + 4.5);
-      pdfDoc.text(`Email: ${inv.fromEmail || "info@monkmedia.ca"}`, leftMargin, yPos + 9);
-      
-      const craNo = inv.craNumber || (tax > 0 ? "777790411" : "");
-      const hstNo = inv.hstNumber || (tax > 0 ? "777790411 RT 0001" : "");
-
-      let lineOffset = 13.5;
-      if (craNo) {
-        pdfDoc.setTextColor(75, 85, 99);
-        pdfDoc.setFont("helvetica", "normal");
-        pdfDoc.text("CRA Business Number: ", leftMargin, yPos + lineOffset);
-        pdfDoc.setTextColor(17, 24, 39);
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.text(craNo, leftMargin + 34, yPos + lineOffset);
-        lineOffset += 4.5;
-      }
-
-      if (hstNo) {
-        pdfDoc.setTextColor(75, 85, 99);
-        pdfDoc.setFont("helvetica", "normal");
-        pdfDoc.text("HST Registration No.: ", leftMargin, yPos + lineOffset);
-        pdfDoc.setTextColor(17, 24, 39);
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.text(hstNo, leftMargin + 32, yPos + lineOffset);
-      }
-
-      // Bill To Text Details
-      const customClientName = client?.businessName || inv.clientName || "Client Business Name";
-      const customAttentionName = client?.contactPerson || inv.clientAttention || "";
-      const customClientEmail = client?.email || inv.clientEmail || "client@email.com";
-
-      pdfDoc.setTextColor(17, 24, 39); // #111827
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(10);
-      pdfDoc.text(customClientName, leftMargin + 95, yPos);
-
-      pdfDoc.setTextColor(75, 85, 99); // #4b5563
-      pdfDoc.setFont("helvetica", "normal");
-      pdfDoc.setFontSize(8.5);
-      pdfDoc.text(`Attention: ${customAttentionName}`, leftMargin + 95, yPos + 4.5);
-      pdfDoc.text(`Email: ${customClientEmail}`, leftMargin + 95, yPos + 9);
-
-      yPos += 28;
-
-      // Summary Tri-Bar Box
-      pdfDoc.setFillColor(240, 249, 255); // #f0f9ff
-      pdfDoc.setDrawColor(224, 242, 254); // #e0f2fe
-      pdfDoc.setLineWidth(0.3);
+    if (isPaid) {
+      pdfDoc.setFillColor(240, 253, 244);
+      pdfDoc.setDrawColor(220, 252, 231);
       pdfDoc.roundedRect(leftMargin, yPos, contentWidth, 18, 2, 2, "FD");
-
-      // Tri-Bar content titles
+      pdfDoc.setFillColor(220, 252, 231);
+      pdfDoc.roundedRect(leftMargin + 5, yPos + 4, 6, 6, 3, 3, "F");
+      pdfDoc.setDrawColor(22, 163, 74);
+      pdfDoc.setLineWidth(0.6);
+      pdfDoc.line(leftMargin + 6.5, yPos + 7, leftMargin + 7.5, yPos + 8);
+      pdfDoc.line(leftMargin + 7.5, yPos + 8, leftMargin + 9.5, yPos + 5.5);
+      pdfDoc.setTextColor(22, 101, 52);
       pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(9);
+      pdfDoc.text("PAYMENT RECEIVED IN FULL", leftMargin + 15, yPos + 7.5);
+      pdfDoc.setTextColor(21, 128, 61);
+      pdfDoc.setFont("helvetica", "normal");
       pdfDoc.setFontSize(7.5);
-      pdfDoc.setTextColor(52, 142, 171); // #348eab
-      pdfDoc.text("PAYMENT STATUS", leftMargin + 30, yPos + 5.5, { align: "center" });
-      pdfDoc.text(isPaid ? "PAYMENT DATE" : "DUE DATE", leftMargin + 90, yPos + 5.5, { align: "center" });
-      pdfDoc.text("AMOUNT PAID", leftMargin + 150, yPos + 5.5, { align: "center" });
-
-      // Column Divider Lines inside Tri-bar
-      pdfDoc.setDrawColor(186, 230, 253); // #bae6fd
-      pdfDoc.line(leftMargin + 60, yPos + 2, leftMargin + 60, yPos + 16);
-      pdfDoc.line(leftMargin + 120, yPos + 2, leftMargin + 120, yPos + 16);
-
-      // Tri-Bar Values
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(11);
-      if (isPaid) {
-        pdfDoc.setTextColor(22, 163, 74); // #16a34a
-        pdfDoc.text("RECEIVED", leftMargin + 30, yPos + 12.5, { align: "center" });
-      } else if (isPartial) {
-        pdfDoc.setTextColor(14, 165, 233); // #0ea5e9
-        pdfDoc.text("PARTIAL", leftMargin + 30, yPos + 12.5, { align: "center" });
-      } else {
-        pdfDoc.setTextColor(245, 158, 11); // #f59e0b
-        pdfDoc.text("DUE", leftMargin + 30, yPos + 12.5, { align: "center" });
-      }
-
-      pdfDoc.setTextColor(17, 24, 39); // #111827
-      pdfDoc.setFontSize(10);
-      pdfDoc.text(formatDateFriendly(isPaid ? inv.invoiceDate : inv.dueDate), leftMargin + 90, yPos + 12.5, { align: "center" });
-      pdfDoc.text(`$${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD`, leftMargin + 150, yPos + 12.5, { align: "center" });
-
-      yPos += 30;
-
-      // Table Header (Navy Blue)
-      pdfDoc.setFillColor(11, 34, 47); // #0b222f
-      pdfDoc.rect(leftMargin, yPos, contentWidth, 9, "F");
-      
-      pdfDoc.setTextColor(255, 255, 255);
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(8.5);
-      pdfDoc.text("DESCRIPTION", leftMargin + 5, yPos + 6);
-      pdfDoc.text("AMOUNT (CAD)", leftMargin + contentWidth - 5, yPos + 6, { align: "right" });
-
-      yPos += 9;
-
-      // Table Row
-      pdfDoc.setDrawColor(229, 231, 235); // #e5e7eb
-      pdfDoc.rect(leftMargin, yPos, contentWidth, 12);
-      
-      pdfDoc.setTextColor(17, 24, 39); // #111827
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(9);
-      pdfDoc.text(inv.description || inv.projectName || inv.notes || "Software and App Development", leftMargin + 5, yPos + 7.5);
-      pdfDoc.text(`$${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos + 7.5, { align: "right" });
-
-      yPos += 22;
-
-      // Calculations Right Aligned
-      pdfDoc.setTextColor(107, 114, 128); // #6b7280
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(9);
-      pdfDoc.text("Subtotal", leftMargin + contentWidth - 65, yPos);
-      pdfDoc.setFont("helvetica", "normal");
-      pdfDoc.text(`$${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
-
-      if (tax > 0) {
-        yPos += 6;
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.text("HST (13%)", leftMargin + contentWidth - 65, yPos);
-        pdfDoc.setFont("helvetica", "normal");
-        pdfDoc.text(`$${tax.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
-      }
-
-      yPos += 3;
-      pdfDoc.setDrawColor(229, 231, 235); // #e5e7eb
-      pdfDoc.line(leftMargin + contentWidth - 65, yPos + 1, leftMargin + contentWidth, yPos + 1);
-
-      yPos += 8;
-      pdfDoc.setTextColor(17, 24, 39); // #111827
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(9.5);
-      pdfDoc.text("Gross Total", leftMargin + contentWidth - 65, yPos);
-      pdfDoc.text(`$${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
-
-      yPos += 6.5;
-      pdfDoc.setTextColor(107, 114, 128); // #6b7280
-      pdfDoc.setFont("helvetica", "bold");
-      pdfDoc.setFontSize(9);
-      pdfDoc.text("Amount Received", leftMargin + contentWidth - 65, yPos);
-      pdfDoc.setFont("helvetica", "normal");
-      pdfDoc.text(`$${(Number(inv.amountPaid) || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
-
-      yPos += 3;
-      pdfDoc.setDrawColor(229, 231, 235); // #e5e7eb
-      pdfDoc.line(leftMargin + contentWidth - 65, yPos + 1, leftMargin + contentWidth, yPos + 1);
-
-      yPos += 9;
-      const balanceVal = Math.max(0, total - (Number(inv.amountPaid) || 0));
-      if (balanceVal <= 0) {
-        pdfDoc.setTextColor(22, 163, 74); // Green
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(12);
-        pdfDoc.text("REMAINING DUE", leftMargin + contentWidth - 65, yPos);
-        pdfDoc.text("$0.00", leftMargin + contentWidth - 5, yPos, { align: "right" });
-      } else {
-        pdfDoc.setTextColor(245, 158, 11); // Amber
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(12);
-        pdfDoc.text("REMAINING DUE", leftMargin + contentWidth - 65, yPos);
-        pdfDoc.text(`$${balanceVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, leftMargin + contentWidth - 5, yPos, { align: "right" });
-      }
-
-      yPos += 14;
-
-      // Bottom Confirmation Success Banner
-      if (isPaid) {
-        pdfDoc.setFillColor(240, 253, 244); // #f0fdf4
-        pdfDoc.setDrawColor(220, 252, 231); // #dcfce7
-        pdfDoc.roundedRect(leftMargin, yPos, contentWidth, 18, 2, 2, "FD");
-
-        // Checkmark badge circle
-        pdfDoc.setFillColor(220, 252, 231);
-        pdfDoc.roundedRect(leftMargin + 5, yPos + 4, 6, 6, 3, 3, "F");
-        
-        // Draw green checkmark tick lines
-        pdfDoc.setDrawColor(22, 163, 74);
-        pdfDoc.setLineWidth(0.6);
-        pdfDoc.line(leftMargin + 6.5, yPos + 7, leftMargin + 7.5, yPos + 8);
-        pdfDoc.line(leftMargin + 7.5, yPos + 8, leftMargin + 9.5, yPos + 5.5);
-
-        pdfDoc.setTextColor(22, 101, 52); // #166534
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(9);
-        pdfDoc.text("PAYMENT RECEIVED IN FULL", leftMargin + 15, yPos + 7.5);
-
-        pdfDoc.setTextColor(21, 128, 61); // #15803d
-        pdfDoc.setFont("helvetica", "normal");
-        pdfDoc.setFontSize(7.5);
-        pdfDoc.text(`This receipt confirms full payment of $${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD for the services listed above.`, leftMargin + 15, yPos + 12.5);
-      } else if (isPartial) {
-        pdfDoc.setFillColor(240, 249, 255); // #f0f9ff
-        pdfDoc.setDrawColor(224, 242, 254); // #e0f2fe
-        pdfDoc.roundedRect(leftMargin, yPos, contentWidth, 18, 2, 2, "FD");
-
-        // Info badge circle
-        pdfDoc.setFillColor(224, 242, 254);
-        pdfDoc.roundedRect(leftMargin + 5, yPos + 4, 6, 6, 3, 3, "F");
-        
-        pdfDoc.setTextColor(14, 165, 233);
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(8);
-        pdfDoc.text("i", leftMargin + 8, yPos + 8.2, { align: "center" });
-
-        pdfDoc.setTextColor(3, 105, 161); // #0369a1
-        pdfDoc.setFont("helvetica", "bold");
-        pdfDoc.setFontSize(9);
-        pdfDoc.text("PARTIAL PAYMENT RECEIVED", leftMargin + 15, yPos + 7.5);
-
-        pdfDoc.setTextColor(2, 132, 199); // #0284c7
-        pdfDoc.setFont("helvetica", "normal");
-        pdfDoc.setFontSize(7.5);
-        pdfDoc.text(`This receipt confirms a partial payment of $${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD. Outstanding balance: $${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD.`, leftMargin + 15, yPos + 12.5);
-      }
-
-      // Footer Position
-      const footerY = pageHeight - 25;
-      pdfDoc.setDrawColor(243, 244, 246); // #f3f4f6
-      pdfDoc.setLineWidth(0.5);
-      pdfDoc.line(leftMargin, footerY, leftMargin + contentWidth, footerY);
-
-      pdfDoc.setTextColor(156, 163, 175); // #9ca3af
+      pdfDoc.text(`This receipt confirms full payment of $${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD for the services listed above.`, leftMargin + 15, yPos + 12.5);
+    } else if (isPartial) {
+      pdfDoc.setFillColor(240, 249, 255);
+      pdfDoc.setDrawColor(224, 242, 254);
+      pdfDoc.roundedRect(leftMargin, yPos, contentWidth, 18, 2, 2, "FD");
+      pdfDoc.setFillColor(224, 242, 254);
+      pdfDoc.roundedRect(leftMargin + 5, yPos + 4, 6, 6, 3, 3, "F");
+      pdfDoc.setTextColor(14, 165, 233);
       pdfDoc.setFont("helvetica", "bold");
       pdfDoc.setFontSize(8);
-      pdfDoc.text("Thank you for choosing Monk Media.", leftMargin, footerY + 6);
-      pdfDoc.text("info@monkmedia.ca", leftMargin + contentWidth, footerY + 6, { align: "right" });
-
+      pdfDoc.text("i", leftMargin + 8, yPos + 8.2, { align: "center" });
+      pdfDoc.setTextColor(3, 105, 161);
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(9);
+      pdfDoc.text("PARTIAL PAYMENT RECEIVED", leftMargin + 15, yPos + 7.5);
+      pdfDoc.setTextColor(2, 132, 199);
       pdfDoc.setFont("helvetica", "normal");
       pdfDoc.setFontSize(7.5);
-      pdfDoc.text("14689941 Canada Inc. operating as Monk Media", leftMargin + contentWidth / 2, footerY + 13, { align: "center" });
+      pdfDoc.text(`This receipt confirms a partial payment of $${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD. Outstanding balance: $${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAD.`, leftMargin + 15, yPos + 12.5);
+    }
 
+    const footerY = pageHeight - 25;
+    pdfDoc.setDrawColor(243, 244, 246);
+    pdfDoc.setLineWidth(0.5);
+    pdfDoc.line(leftMargin, footerY, leftMargin + contentWidth, footerY);
+    pdfDoc.setTextColor(156, 163, 175);
+    pdfDoc.setFont("helvetica", "bold");
+    pdfDoc.setFontSize(8);
+    pdfDoc.text("Thank you for choosing Monk Media.", leftMargin, footerY + 6);
+    pdfDoc.text("info@monkmedia.ca", leftMargin + contentWidth, footerY + 6, { align: "right" });
+    pdfDoc.setFont("helvetica", "normal");
+    pdfDoc.setFontSize(7.5);
+    pdfDoc.text("14689941 Canada Inc. operating as Monk Media", leftMargin + contentWidth / 2, footerY + 13, { align: "center" });
+
+    return pdfDoc;
+  };
+
+  const handleDownloadPDF = async (inv) => {
+    try {
+      const pdfDoc = await generateInvoicePDFDoc(inv);
       pdfDoc.save(`Invoice-${inv.invoiceNumber}.pdf`);
     } catch (err) {
       console.error("PDF generation failed:", err);
       alert("Failed to generate PDF: " + err.message);
+    }
+  };
+
+  const handleShareInvoiceWhatsApp = async (inv) => {
+    const phoneNumber = prompt("Enter recipient's WhatsApp number (with country code, e.g. 14161234567):");
+    if (!phoneNumber) return;
+    const cleanPhone = phoneNumber.replace(/\D/g, "");
+    if (!cleanPhone) {
+      alert("Invalid phone number format.");
+      return;
+    }
+
+    try {
+      alert("Generating PDF and preparing WhatsApp link...");
+      const pdfDoc = await generateInvoicePDFDoc(inv);
+      const pdfBlob = pdfDoc.output("blob");
+
+      // Upload to Firebase Storage
+      const storagePath = `invoices/${inv.invoiceNumber}-${Date.now()}.pdf`;
+      const storageRef = ref(storage, storagePath);
+      const snapshot = await uploadBytes(storageRef, pdfBlob, { contentType: "application/pdf" });
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+
+      // Construct message and redirect to WhatsApp
+      const message = `Hello! Here is the invoice *#${inv.invoiceNumber}* from Monk Media for your campaign *"${inv.projectName || "Services"}"*:\n\n${downloadUrl}`;
+      const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+      window.open(waUrl, "_blank");
+    } catch (err) {
+      console.error("WhatsApp share failed:", err);
+      alert("Failed to share via WhatsApp: " + err.message);
     }
   };
 
@@ -1333,7 +1318,7 @@ export default function FinancePage() {
                       <th className="p-4 px-6 text-right">Campaign Value</th>
                       <th className="p-4 px-6 text-right">Received</th>
                       <th className="p-4 px-6 text-right">Balance</th>
-                      <th className="p-4 px-6 text-right">Action</th>
+                      <th className="p-4 px-6 text-right w-1">Action</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
@@ -1473,7 +1458,7 @@ export default function FinancePage() {
                             </td>
                             <td className="p-4 px-6 text-right">${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 px-6 text-right font-bold">${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                            <td className="p-4 px-6 text-right whitespace-nowrap">
+                            <td className="p-4 px-6 text-right w-1 whitespace-nowrap">
                               <div className="flex items-center justify-end gap-2">
                                <button
                                  type="button"
@@ -1498,6 +1483,15 @@ export default function FinancePage() {
                                 title="Download PDF"
                               >
                                 <Download className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleShareInvoiceWhatsApp(inv)}
+                                className="p-1.5 text-[#25D366] hover:text-[#20ba5a] hover:bg-green-50 rounded border border-[#25d366]/30 transition"
+                                title="Share via WhatsApp"
+                              >
+                                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.417 9.863-9.864.001-2.637-1.03-5.115-2.903-6.99C16.562 1.876 14.09 1.84 11.457 1.84c-5.436 0-9.86 4.417-9.864 9.864-.001 1.745.485 3.426 1.449 4.898L2.096 22.04l5.684-1.488zm10.74-4.838c-.287-.143-1.696-.838-1.958-.934-.263-.096-.454-.143-.646.143-.19.288-.74.934-.907 1.123-.166.19-.333.21-.62.068-.288-.143-1.21-.446-2.305-1.424-.852-.76-1.428-1.7-1.595-1.986-.167-.287-.018-.442.126-.583.13-.127.287-.333.43-.5.143-.167.19-.287.287-.478.096-.19.048-.357-.024-.5-.072-.143-.646-1.558-.887-2.133-.235-.563-.472-.486-.646-.495-.167-.008-.358-.01-.55-.01s-.502.072-.766.358c-.263.287-1.004.98-1.004 2.39s1.028 2.776 1.171 2.968c.143.19 2.023 3.09 4.9 4.336.685.296 1.22.473 1.637.605.688.218 1.314.187 1.81.113.552-.082 1.696-.693 1.936-1.36.24-.668.24-1.24.167-1.36-.073-.12-.263-.19-.55-.333z"/>
+                                </svg>
                               </button>
                               <button
                                 onClick={() => handleStartEditInvoice(inv)}
@@ -1657,7 +1651,7 @@ export default function FinancePage() {
                       <th className="p-4 px-6">Payment Method</th>
                       <th className="p-4 px-6">Notes</th>
                       <th className="p-4 px-6 text-right">Processed Value</th>
-                      <th className="p-4 px-6 text-right w-20">Action</th>
+                      <th className="p-4 px-6 text-right w-1">Action</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
@@ -1683,7 +1677,7 @@ export default function FinancePage() {
                           <td className="p-4 px-6 capitalize">{pay.method}</td>
                           <td className="p-4 px-6 text-sky-400 font-medium">{pay.notes || "None"}</td>
                           <td className="p-4 px-6 text-right text-sky-600 font-bold">+${Number(pay.amount).toLocaleString()}</td>
-                          <td className="p-4 px-6 text-right">
+                          <td className="p-4 px-6 text-right w-1 whitespace-nowrap">
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 type="button"
@@ -1697,6 +1691,31 @@ export default function FinancePage() {
                                 title="Quick View Payments"
                               >
                                 Payments
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const targetInv = invoices.find((i) => i.id === pay.invoiceId || i.invoiceNumber === pay.invoiceId) || {
+                                    invoiceNumber: pay.invoiceId || "PAY-REC",
+                                    clientId: pay.clientId,
+                                    invoiceDate: pay.dateReceived,
+                                    dueDate: pay.dateReceived,
+                                    amount: pay.amount,
+                                    tax: 0,
+                                    total: pay.amount,
+                                    amountPaid: pay.amount,
+                                    balance: 0,
+                                    status: "Received",
+                                    description: pay.notes || "Recorded Payment Receipt",
+                                    projectName: pay.projectName || "General Payment"
+                                  };
+                                  handleShareInvoiceWhatsApp(targetInv);
+                                }}
+                                className="p-1.5 text-[#25D366] hover:text-[#20ba5a] hover:bg-green-50 rounded border border-[#25d366]/30 transition animate-pulse"
+                                title="Share Receipt via WhatsApp"
+                              >
+                                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.417 9.863-9.864.001-2.637-1.03-5.115-2.903-6.99C16.562 1.876 14.09 1.84 11.457 1.84c-5.436 0-9.86 4.417-9.864 9.864-.001 1.745.485 3.426 1.449 4.898L2.096 22.04l5.684-1.488zm10.74-4.838c-.287-.143-1.696-.838-1.958-.934-.263-.096-.454-.143-.646.143-.19.288-.74.934-.907 1.123-.166.19-.333.21-.62.068-.288-.143-1.21-.446-2.305-1.424-.852-.76-1.428-1.7-1.595-1.986-.167-.287-.018-.442.126-.583.13-.127.287-.333.43-.5.143-.167.19-.287.287-.478.096-.19.048-.357-.024-.5-.072-.143-.646-1.558-.887-2.133-.235-.563-.472-.486-.646-.495-.167-.008-.358-.01-.55-.01s-.502.072-.766.358c-.263.287-1.004.98-1.004 2.39s1.028 2.776 1.171 2.968c.143.19 2.023 3.09 4.9 4.336.685.296 1.22.473 1.637.605.688.218 1.314.187 1.81.113.552-.082 1.696-.693 1.936-1.36.24-.668.24-1.24.167-1.36-.073-.12-.263-.19-.55-.333z"/>
+                                </svg>
                               </button>
                               {role === "admin" && (
                                 <button
