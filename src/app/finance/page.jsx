@@ -1109,35 +1109,6 @@ export default function FinancePage() {
     }
   };
 
-  const handleShareInvoiceWhatsApp = async (inv) => {
-    const phoneNumber = prompt("Enter recipient's WhatsApp number (with country code, e.g. 14161234567):");
-    if (!phoneNumber) return;
-    const cleanPhone = phoneNumber.replace(/\D/g, "");
-    if (!cleanPhone) {
-      alert("Invalid phone number format.");
-      return;
-    }
-
-    try {
-      alert("Generating PDF and preparing WhatsApp link...");
-      const pdfDoc = await generateInvoicePDFDoc(inv);
-      const pdfBlob = pdfDoc.output("blob");
-
-      // Upload to Firebase Storage
-      const storagePath = `invoices/${inv.invoiceNumber}-${Date.now()}.pdf`;
-      const storageRef = ref(storage, storagePath);
-      const snapshot = await uploadBytes(storageRef, pdfBlob, { contentType: "application/pdf" });
-      const downloadUrl = await getDownloadURL(snapshot.ref);
-
-      // Construct message and redirect to WhatsApp
-      const message = `Hello! Here is the invoice *#${inv.invoiceNumber}* from Monk Media for your campaign *"${inv.projectName || "Services"}"*:\n\n${downloadUrl}`;
-      const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
-      window.open(waUrl, "_blank");
-    } catch (err) {
-      console.error("WhatsApp share failed:", err);
-      alert("Failed to share via WhatsApp: " + err.message);
-    }
-  };
 
   // Auth Guards Block
   if (role === "team") {
@@ -1484,15 +1455,7 @@ export default function FinancePage() {
                               >
                                 <Download className="w-4 h-4" />
                               </button>
-                              <button
-                                onClick={() => handleShareInvoiceWhatsApp(inv)}
-                                className="p-1.5 text-[#25D366] hover:text-[#20ba5a] hover:bg-green-50 rounded border border-[#25d366]/30 transition"
-                                title="Share via WhatsApp"
-                              >
-                                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.417 9.863-9.864.001-2.637-1.03-5.115-2.903-6.99C16.562 1.876 14.09 1.84 11.457 1.84c-5.436 0-9.86 4.417-9.864 9.864-.001 1.745.485 3.426 1.449 4.898L2.096 22.04l5.684-1.488zm10.74-4.838c-.287-.143-1.696-.838-1.958-.934-.263-.096-.454-.143-.646.143-.19.288-.74.934-.907 1.123-.166.19-.333.21-.62.068-.288-.143-1.21-.446-2.305-1.424-.852-.76-1.428-1.7-1.595-1.986-.167-.287-.018-.442.126-.583.13-.127.287-.333.43-.5.143-.167.19-.287.287-.478.096-.19.048-.357-.024-.5-.072-.143-.646-1.558-.887-2.133-.235-.563-.472-.486-.646-.495-.167-.008-.358-.01-.55-.01s-.502.072-.766.358c-.263.287-1.004.98-1.004 2.39s1.028 2.776 1.171 2.968c.143.19 2.023 3.09 4.9 4.336.685.296 1.22.473 1.637.605.688.218 1.314.187 1.81.113.552-.082 1.696-.693 1.936-1.36.24-.668.24-1.24.167-1.36-.073-.12-.263-.19-.55-.333z"/>
-                                </svg>
-                              </button>
+
                               <button
                                 onClick={() => handleStartEditInvoice(inv)}
                                 className="p-1 text-sky-600 hover:text-sky-700 hover:bg-sky-50 rounded border border-sky-200 transition"
@@ -1692,31 +1655,7 @@ export default function FinancePage() {
                               >
                                 Payments
                               </button>
-                              <button
-                                onClick={() => {
-                                  const targetInv = invoices.find((i) => i.id === pay.invoiceId || i.invoiceNumber === pay.invoiceId) || {
-                                    invoiceNumber: pay.invoiceId || "PAY-REC",
-                                    clientId: pay.clientId,
-                                    invoiceDate: pay.dateReceived,
-                                    dueDate: pay.dateReceived,
-                                    amount: pay.amount,
-                                    tax: 0,
-                                    total: pay.amount,
-                                    amountPaid: pay.amount,
-                                    balance: 0,
-                                    status: "Received",
-                                    description: pay.notes || "Recorded Payment Receipt",
-                                    projectName: pay.projectName || "General Payment"
-                                  };
-                                  handleShareInvoiceWhatsApp(targetInv);
-                                }}
-                                className="p-1.5 text-[#25D366] hover:text-[#20ba5a] hover:bg-green-50 rounded border border-[#25d366]/30 transition animate-pulse"
-                                title="Share Receipt via WhatsApp"
-                              >
-                                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.417 9.863-9.864.001-2.637-1.03-5.115-2.903-6.99C16.562 1.876 14.09 1.84 11.457 1.84c-5.436 0-9.86 4.417-9.864 9.864-.001 1.745.485 3.426 1.449 4.898L2.096 22.04l5.684-1.488zm10.74-4.838c-.287-.143-1.696-.838-1.958-.934-.263-.096-.454-.143-.646.143-.19.288-.74.934-.907 1.123-.166.19-.333.21-.62.068-.288-.143-1.21-.446-2.305-1.424-.852-.76-1.428-1.7-1.595-1.986-.167-.287-.018-.442.126-.583.13-.127.287-.333.43-.5.143-.167.19-.287.287-.478.096-.19.048-.357-.024-.5-.072-.143-.646-1.558-.887-2.133-.235-.563-.472-.486-.646-.495-.167-.008-.358-.01-.55-.01s-.502.072-.766.358c-.263.287-1.004.98-1.004 2.39s1.028 2.776 1.171 2.968c.143.19 2.023 3.09 4.9 4.336.685.296 1.22.473 1.637.605.688.218 1.314.187 1.81.113.552-.082 1.696-.693 1.936-1.36.24-.668.24-1.24.167-1.36-.073-.12-.263-.19-.55-.333z"/>
-                                </svg>
-                              </button>
+
                               {role === "admin" && (
                                 <button
                                   onClick={async () => {
