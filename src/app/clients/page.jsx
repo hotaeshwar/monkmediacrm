@@ -376,11 +376,6 @@ export default function ClientsPage() {
       const listProj = [];
       snapProj.forEach((doc) => listProj.push({ id: doc.id, ...doc.data() }));
 
-      // 3. Determine primaryInvoiceNumber
-      const primaryInvNum = listInv.length > 0
-        ? (listInv.find((inv) => inv.invoiceNumber)?.invoiceNumber || "INV-WEB-856502")
-        : "INV-WEB-856502";
-
       // 4. Fetch all payments
       const snapPay = await getDocs(collection(db, "payments"));
       const allPay = [];
@@ -389,6 +384,7 @@ export default function ClientsPage() {
       // 5. Synthesize entries mapped by projects
       const listPay = listProj.map((proj) => {
         const realInv = listInv.find((inv) => inv.projectId === proj.id);
+        const currentInvoiceNumber = realInv?.invoiceNumber || `MM-SIM-${proj.id.substring(0, 6).toUpperCase()}`;
         const taxRate = client.financials?.taxRate ?? 13;
         const baseVal = Number(proj.value) || 0;
         const tax = Number(((baseVal * taxRate) / 100).toFixed(2));
@@ -396,10 +392,10 @@ export default function ClientsPage() {
         const status = proj.status === "Completed" ? "Paid" : "Due";
 
         if (status === "Paid") {
-          const realPay = allPay.find((p) => p.invoiceId === primaryInvNum && p.amount > 0);
+          const realPay = allPay.find((p) => (p.invoiceId === currentInvoiceNumber || p.invoiceId === realInv?.id) && p.amount > 0);
           return {
             id: realInv?.id ? `pay-${realInv.id}` : `proj-pay-${proj.id}`,
-            invoiceId: primaryInvNum,
+            invoiceId: currentInvoiceNumber,
             clientId: client.id,
             amount: total,
             dateReceived: realPay?.dateReceived || realInv?.invoiceDate || proj.startDate || new Date().toISOString().split("T")[0],
@@ -410,7 +406,7 @@ export default function ClientsPage() {
         } else {
           return {
             id: realInv?.id ? `pay-due-${realInv.id}` : `proj-due-${proj.id}`,
-            invoiceId: primaryInvNum,
+            invoiceId: currentInvoiceNumber,
             clientId: client.id,
             amount: 0,
             dateReceived: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],

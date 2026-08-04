@@ -217,6 +217,30 @@ export default function FinancePage() {
     };
   }, [currentUser, role]);
 
+  // Auto-migration for duplicate invoice numbers under the same client
+  useEffect(() => {
+    if (role === "admin" && invoices.length > 0) {
+      const seen = new Set();
+      invoices.forEach((inv) => {
+        if (!inv.invoiceNumber) return;
+        const key = `${inv.clientId}_${inv.invoiceNumber}`;
+        if (seen.has(key)) {
+          const newNumber = `MM-SIM-${inv.id.substring(0, 6).toUpperCase()}`;
+          try {
+            updateDoc(doc(db, "invoices", inv.id), {
+              invoiceNumber: newNumber
+            });
+            console.log(`Auto-migrated duplicate invoice number for doc ${inv.id} to: ${newNumber}`);
+          } catch (err) {
+            console.error("Failed to auto-migrate duplicate invoice:", err);
+          }
+        } else {
+          seen.add(key);
+        }
+      });
+    }
+  }, [role, invoices]);
+
   const adminIds = users.filter(u => u.role === "admin").map(u => u.id);
 
   // Scoped Data Boundary for managers (syncing admin-created clients)
