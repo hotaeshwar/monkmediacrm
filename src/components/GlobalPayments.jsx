@@ -526,10 +526,9 @@ export default function GlobalPayments() {
                       </div>
 
                       <div>
-                        <label className="block text-sky-500 mb-1">Remaining Amount to Pay ($)</label>
+                        <label className="block text-sky-500 mb-1">Remaining Amount to Pay ($) (Optional)</label>
                         <input
                           type="number"
-                          required
                           value={payoutRemaining}
                           onChange={(e) => setPayoutRemaining(e.target.value)}
                           placeholder="e.g. 300"
