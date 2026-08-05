@@ -96,6 +96,12 @@ service cloud.firestore {
                   || (isManager() && isAssignedToClient(request.resource.data.clientId));
     }
 
+    match /payouts/{payoutId} {
+      allow read: if isAdmin() || isManager();
+      allow create, update: if isAdmin() || isManager();
+      allow delete: if isAdmin();
+    }
+
     match /expenses/{expenseId} {
       allow read: if isAdmin()
                   || (isManager() && resource.data.clientId != null
