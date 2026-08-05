@@ -379,7 +379,17 @@ export default function ClientProfilePage() {
       // Respect real invoice values if they exist
       const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? total : 0);
       const balance = realInv ? (Number(realInv.balance) ?? (total - amountPaid)) : (proj.status === "Completed" ? 0 : total);
-      const status = realInv ? (realInv.status || (balance <= 0 ? "Received" : "Due")) : (proj.status === "Completed" ? "Received" : "Due");
+      
+      let status = "Due";
+      if (amountPaid >= total && total > 0) {
+        status = "Received";
+      } else if (amountPaid > 0 && balance > 0) {
+        status = "Partial";
+      } else if (realInv && realInv.status) {
+        status = realInv.status;
+      } else if (proj && proj.status === "Completed") {
+        status = "Received";
+      }
 
       list.push({
         id: realInv?.id || `sim-inv-${proj.id}`,
@@ -411,7 +421,14 @@ export default function ClientProfilePage() {
           total: realInv.total || 0,
           amountPaid: Number(realInv.amountPaid) || 0,
           balance: Number(realInv.balance) || 0,
-          status: realInv.status || "Due",
+          status: (() => {
+            const totalVal = Number(realInv.total) || 0;
+            const paidVal = Number(realInv.amountPaid) || 0;
+            const balVal = Number(realInv.balance) || 0;
+            if (paidVal >= totalVal && totalVal > 0) return "Received";
+            if (paidVal > 0 && balVal > 0) return "Partial";
+            return realInv.status || "Due";
+          })(),
           projectId: realInv.projectId || "",
           projectName: realInv.projectName || realInv.description || "Manual Invoice",
           realInvoiceId: realInv.id
@@ -465,22 +482,7 @@ export default function ClientProfilePage() {
       }
     });
 
-    // 2. Add outstanding/unpaid simulated invoice balances
-    synthesizedProjectInvoices.forEach((inv) => {
-      if (inv.balance > 0) {
-        list.push({
-          id: `outstanding-${inv.id}`,
-          invoiceId: inv.id,
-          clientId: id,
-          amount: 0,
-          dateReceived: inv.dueDate,
-          method: "",
-          notes: `Project Campaign: ${inv.projectName} (Unpaid)`,
-          isOutstanding: true,
-          balance: inv.balance
-        });
-      }
-    });
+
 
     return list;
   }, [synthesizedProjectInvoices, id, client, payments]);

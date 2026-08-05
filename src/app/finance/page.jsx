@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db, storage } from "@/lib/firebase";
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, getDoc, query, where, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { ShieldAlert, TrendingUp, TrendingDown, DollarSign, Plus, Check, FileText, FileMinus, X, Printer, Download, Trash2, Edit2, AlertTriangle } from "lucide-react";
+import { ShieldAlert, TrendingUp, TrendingDown, DollarSign, Plus, Check, FileText, FileMinus, X, Printer, Download, Trash2, Edit2, AlertTriangle, CreditCard } from "lucide-react";
 import Loader from "@/components/Loader";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 
@@ -29,7 +29,7 @@ export default function FinancePage() {
   const [dateTo, setDateTo] = useState("");
 
   // Tab State
-  const [activeTab, setActiveTab] = useState("invoices"); // invoices, expenses, payments, profit
+  const [activeTab, setActiveTab] = useState("invoices"); // invoices, expenses, payments, profit, payouts
 
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState(null);
   const [isLogInvOpen, setIsLogInvOpen] = useState(false);
@@ -271,7 +271,17 @@ export default function FinancePage() {
         // Respect real invoice values if they exist
         const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? total : 0);
         const balance = realInv ? (Number(realInv.balance) ?? (total - amountPaid)) : (proj.status === "Completed" ? 0 : total);
-        const status = realInv ? (realInv.status || (balance <= 0 ? "Received" : "Due")) : (proj.status === "Completed" ? "Received" : "Due");
+        
+        let status = "Due";
+        if (amountPaid >= total && total > 0) {
+          status = "Received";
+        } else if (amountPaid > 0 && balance > 0) {
+          status = "Partial";
+        } else if (realInv && realInv.status) {
+          status = realInv.status;
+        } else if (proj && proj.status === "Completed") {
+          status = "Received";
+        }
 
         list.push({
           id: realInv?.id || `sim-inv-${proj.id}`,
@@ -312,7 +322,14 @@ export default function FinancePage() {
           total: realInv.total || 0,
           amountPaid: Number(realInv.amountPaid) || 0,
           balance: Number(realInv.balance) || 0,
-          status: realInv.status || "Due",
+          status: (() => {
+            const totalVal = Number(realInv.total) || 0;
+            const paidVal = Number(realInv.amountPaid) || 0;
+            const balVal = Number(realInv.balance) || 0;
+            if (paidVal >= totalVal && totalVal > 0) return "Received";
+            if (paidVal > 0 && balVal > 0) return "Partial";
+            return realInv.status || "Due";
+          })(),
           projectId: realInv.projectId || "",
           projectName: realInv.projectName || realInv.description || "Manual Invoice",
           clientName: cl.businessName,
@@ -382,24 +399,6 @@ export default function FinancePage() {
         }
       }
     });
-
-    // 2. Add outstanding simulated invoices
-    allSynthesizedInvoices.forEach((inv) => {
-      if (inv.balance > 0) {
-        list.push({
-          id: `outstanding-${inv.id}`,
-          invoiceId: inv.id,
-          clientId: inv.clientId,
-          amount: 0,
-          dateReceived: inv.dueDate,
-          method: "",
-          notes: `Project Campaign: ${inv.projectName} (Unpaid)`,
-          isOutstanding: true,
-          balance: inv.balance
-        });
-      }
-    });
-
     return list;
   }, [allSynthesizedInvoices, payments]);
 
@@ -1252,6 +1251,7 @@ export default function FinancePage() {
             { id: "expenses", label: "Agency Expenses", icon: TrendingDown },
             { id: "payments", label: "Payments Log", icon: DollarSign },
             { id: "profit", label: "Profit Statement", icon: TrendingUp },
+            { id: "payouts", label: "Personnel Payouts", icon: CreditCard },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1603,8 +1603,7 @@ export default function FinancePage() {
 
             {/* SUB-TAB 3: PAYMENTS */}
             {activeTab === "payments" && (
-              <>
-                <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
+              <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                   <thead>
@@ -1683,73 +1682,6 @@ export default function FinancePage() {
                 </table>
                 </div>
               </div>
-
-              {/* Personnel Payouts Table */}
-              <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden mt-6">
-                <div className="p-4 bg-sky-50/20 border-b border-sky-100 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-sky-600">Personnel Payouts</h3>
-                  <span className="text-[10px] text-sky-400 font-bold uppercase tracking-wider">
-                    Payments to Team / Vendors
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
-                        <th className="p-4 px-6">Name</th>
-                        <th className="p-4 px-6">Date of Payment</th>
-                        <th className="p-4 px-6 text-right font-bold">Amount Paid</th>
-                        <th className="p-4 px-6 text-right font-bold">Remaining Balance</th>
-                        <th className="p-4 px-6">Payment Method</th>
-                        <th className="p-4 px-6">Notes</th>
-                        {role === "admin" && <th className="p-4 px-6 text-right w-20">Action</th>}
-                      </tr>
-                    </thead>
-                    <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
-                      {filteredPayouts.length === 0 ? (
-                        <tr>
-                          <td colSpan={role === "admin" ? 7 : 6} className="p-8 text-center text-sky-400 font-medium">
-                            No payouts logged for this period.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredPayouts.map((p) => (
-                          <tr key={p.id} className="hover:bg-sky-50/10">
-                            <td className="p-4 px-6 font-semibold text-sky-900">{p.name}</td>
-                            <td className="p-4 px-6">{p.date}</td>
-                            <td className="p-4 px-6 text-right text-sky-600 font-bold">${Number(p.amount).toLocaleString()}</td>
-                            <td className="p-4 px-6 text-right text-red-500 font-bold">${Number(p.remainingBalance || 0).toLocaleString()}</td>
-                            <td className="p-4 px-6 capitalize">{p.method}</td>
-                            <td className="p-4 px-6 text-sky-400 font-medium">{p.notes || "None"}</td>
-                            {role === "admin" && (
-                              <td className="p-4 px-6 text-right">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (confirm("Are you sure you want to delete this payout record?")) {
-                                      try {
-                                        await deleteDoc(doc(db, "payouts", p.id));
-                                        alert("Payout record deleted successfully!");
-                                      } catch (err) {
-                                        alert("Error: " + err.message);
-                                      }
-                                    }
-                                  }}
-                                  className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-all"
-                                  title="Delete Payout"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </td>
-                            )}
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              </>
             )}
 
             {/* SUB-TAB 4: PROFIT STATEMENT */}
@@ -1893,6 +1825,74 @@ export default function FinancePage() {
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* SUB-TAB 5: PERSONNEL PAYOUTS */}
+            {activeTab === "payouts" && (
+              <div className="bg-white border border-sky-100 rounded-3xl shadow-xl overflow-hidden animate-fadeIn">
+                <div className="p-4 bg-sky-50/20 border-b border-sky-100 flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-sky-600">Personnel Payouts</h3>
+                  <span className="text-[10px] text-sky-400 font-bold uppercase tracking-wider">
+                    Payments to Team / Vendors
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-sky-50/20 border-b border-sky-100 text-[10px] font-bold text-sky-500 uppercase">
+                        <th className="p-4 px-6">Name</th>
+                        <th className="p-4 px-6">Date of Payment</th>
+                        <th className="p-4 px-6 text-right font-bold">Amount Paid</th>
+                        <th className="p-4 px-6 text-right font-bold">Remaining Balance</th>
+                        <th className="p-4 px-6">Payment Method</th>
+                        <th className="p-4 px-6">Notes</th>
+                        {role === "admin" && <th className="p-4 px-6 text-right w-20">Action</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                      {filteredPayouts.length === 0 ? (
+                        <tr>
+                          <td colSpan={role === "admin" ? 7 : 6} className="p-8 text-center text-sky-400 font-medium">
+                            No payouts logged for this period.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredPayouts.map((p) => (
+                          <tr key={p.id} className="hover:bg-sky-50/10">
+                            <td className="p-4 px-6 font-semibold text-sky-900">{p.name}</td>
+                            <td className="p-4 px-6">{p.date}</td>
+                            <td className="p-4 px-6 text-right text-sky-600 font-bold">${Number(p.amount).toLocaleString()}</td>
+                            <td className="p-4 px-6 text-right text-red-500 font-bold">${Number(p.remainingBalance || 0).toLocaleString()}</td>
+                            <td className="p-4 px-6 capitalize">{p.method}</td>
+                            <td className="p-4 px-6 text-sky-400 font-medium">{p.notes || "None"}</td>
+                            {role === "admin" && (
+                              <td className="p-4 px-6 text-right">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (confirm("Are you sure you want to delete this payout record?")) {
+                                      try {
+                                        await deleteDoc(doc(db, "payouts", p.id));
+                                        alert("Payout record deleted successfully!");
+                                      } catch (err) {
+                                        alert("Error: " + err.message);
+                                      }
+                                    }
+                                  }}
+                                  className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-all"
+                                  title="Delete Payout"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
