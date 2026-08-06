@@ -270,7 +270,7 @@ export default function FinancePage() {
 
         // Respect real invoice values if they exist
         const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? total : 0);
-        const balance = realInv ? (Number(realInv.balance) ?? (total - amountPaid)) : (proj.status === "Completed" ? 0 : total);
+        const balance = total - amountPaid;
         
         let status = "Due";
         if (amountPaid >= total && total > 0) {
@@ -321,7 +321,7 @@ export default function FinancePage() {
           tax: realInv.tax || 0,
           total: realInv.total || 0,
           amountPaid: Number(realInv.amountPaid) || 0,
-          balance: Number(realInv.balance) || 0,
+          balance: Number(realInv.total || 0) - (Number(realInv.amountPaid) || 0),
           status: (() => {
             const totalVal = Number(realInv.total) || 0;
             const paidVal = Number(realInv.amountPaid) || 0;
@@ -1428,7 +1428,15 @@ export default function FinancePage() {
                                 : "—"}
                             </td>
                             <td className="p-4 px-6 text-right">${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                            <td className="p-4 px-6 text-right font-bold">${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td className="p-4 px-6 text-right font-bold">
+                              {inv.status === "Partial" ? (
+                                <span className="text-amber-500">
+                                  ${Number(inv.total - inv.amountPaid).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} Due
+                                </span>
+                              ) : (
+                                `$${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                              )}
+                            </td>
                             <td className="p-4 px-6 text-right w-1 whitespace-nowrap">
                               <div className="flex items-center justify-end gap-2">
                                <button
