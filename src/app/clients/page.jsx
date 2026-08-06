@@ -542,28 +542,28 @@ export default function ClientsPage() {
                     <th className="py-4 px-6 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-sky-100 text-sm text-sky-600 font-medium">
+                <tbody className="divide-y divide-sky-100 text-sm text-sky-600 font-bold">
                   {filteredClients.map((c) => (
                     <tr key={c.id} className="hover:bg-sky-50/20 transition-colors">
                       <td className="py-4.5 px-6">
                         <div className="flex items-center gap-2">
-                          <Link href={`/clients/profile?id=${c.id}`} className="font-bold text-sky-600 hover:underline">
+                          <Link href={`/clients/profile?id=${c.id}`} className="font-black text-sky-600 hover:underline">
                             {c.businessName}
                           </Link>
                         </div>
                       </td>
-                      <td className="py-4.5 px-6 flex flex-col">
-                        <span>{c.contactPerson}</span>
-                        <span className="text-[10px] text-sky-400 font-medium">{c.email}</span>
+                      <td className="py-4.5 px-6 flex flex-col justify-center">
+                        <span className="font-extrabold text-sky-700">{c.contactPerson}</span>
+                        <span className="text-[10px] text-sky-400 font-bold">{c.email}</span>
                       </td>
-                      <td className="py-4.5 px-6 capitalize">{c.industry}</td>
-                      <td className="py-4.5 px-6 whitespace-nowrap">{c.dateJoined}</td>
-                      <td className="py-4.5 px-6 text-sky-600 font-semibold">
+                      <td className="py-4.5 px-6 capitalize font-extrabold text-sky-700">{c.industry}</td>
+                      <td className="py-4.5 px-6 whitespace-nowrap font-extrabold text-sky-700">{c.dateJoined}</td>
+                      <td className="py-4.5 px-6 text-sky-700 font-black">
                         {(role === "admin" || role === "manager" || role === "client")
                           ? `$${(c.financials?.monthlyRetainer || 0).toLocaleString()}`
                           : "—"}
                       </td>
-                      <td className="py-4.5 px-6 text-sky-600 font-semibold">
+                      <td className="py-4.5 px-6 text-sky-700 font-black">
                         {`$${getClientCampaignValue(c.id).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
                       </td>
                       <td className="py-4.5 px-6">
@@ -577,7 +577,7 @@ export default function ClientsPage() {
                               alert("Error: " + err.message);
                             }
                           }}
-                          className={`px-2.5 py-1 text-xs font-bold border rounded-full cursor-pointer outline-none shadow-sm text-center ${getStatusColor(c.status)}`}
+                          className={`px-1.5 py-0 h-5 text-[8px] font-black border rounded-full cursor-pointer outline-none shadow-sm text-center uppercase tracking-wider max-w-[85px] leading-none ${getStatusColor(c.status)}`}
                         >
                           <option value="Lead">Lead</option>
                           <option value="Onboarding">Onboarding</option>

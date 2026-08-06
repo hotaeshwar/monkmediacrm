@@ -367,7 +367,8 @@ export default function ReportsPage() {
         date: "2026-07-15",
         clientId: client2Id,
         projectId: proj2Id,
-        notes: "Cinematic trailer ad campaign spend."
+        notes: "Cinematic trailer ad campaign spend.",
+        beneficiary: "Ad Agency Ltd"
       });
 
       await addDoc(collection(db, "expenses"), {
@@ -376,7 +377,8 @@ export default function ReportsPage() {
         date: "2026-07-10",
         clientId: "",
         projectId: "",
-        notes: "Adobe Creative Cloud subscription licenses."
+        notes: "Adobe Creative Cloud subscription licenses.",
+        beneficiary: "Adobe Inc."
       });
 
       await addDoc(collection(db, "tasks"), {
@@ -638,15 +640,28 @@ export default function ReportsPage() {
                           </td>
                         </tr>
                       ) : (
-                        reportExpenses.map((exp) => (
-                          <tr key={exp.id} className="hover:bg-sky-50/5">
-                            <td className="p-3 px-4 font-bold">{exp.category}</td>
-                            <td className="p-3 px-4 truncate max-w-[120px]">{getClientName(exp.clientId)}</td>
-                            <td className="p-3 px-4">{exp.date}</td>
-                            <td className="p-3 px-4 text-sky-400 font-medium truncate max-w-[120px]">{exp.notes || "None"}</td>
-                            <td className="p-3 px-4 text-right text-red-500 font-bold">-${Number(exp.amount).toLocaleString()}</td>
-                          </tr>
-                        ))
+                        reportExpenses.map((exp) => {
+                          const recipient = exp.beneficiary || (() => {
+                            if (exp.notes) {
+                              const ln = exp.notes.toLowerCase();
+                              if (ln.includes("shubh")) return "Shubh";
+                              if (ln.includes("chris")) return "Chris";
+                              if (ln.includes("pawan")) return "Pawan";
+                            }
+                            return "";
+                          })();
+                          return (
+                            <tr key={exp.id} className="hover:bg-sky-50/5">
+                              <td className="p-3 px-4 font-bold">{exp.category}</td>
+                              <td className="p-3 px-4 truncate max-w-[120px]">{getClientName(exp.clientId)}</td>
+                              <td className="p-3 px-4">{exp.date}</td>
+                              <td className="p-3 px-4 text-sky-400 font-medium truncate max-w-[120px]" title={recipient ? `[${recipient}] ${exp.notes || ""}` : exp.notes}>
+                                {recipient ? `[${recipient}] ` : ""}{exp.notes || "None"}
+                              </td>
+                              <td className="p-3 px-4 text-right text-red-600 font-black text-xs sm:text-base tracking-tight">-${Number(exp.amount).toLocaleString()}</td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

@@ -50,6 +50,31 @@ export default function TeamPage() {
     };
   }, [currentUser]);
 
+  // Clean up "Sharmaatul" from Firestore automatically
+  useEffect(() => {
+    const cleanupSharmaatul = async () => {
+      try {
+        const q1 = query(collection(db, "users"), where("name", "==", "Sharmaatul"));
+        onSnapshot(q1, (snap) => {
+          snap.forEach(async (d) => {
+            await deleteDoc(doc(db, "users", d.id));
+            console.log("Automatically deleted user Sharmaatul:", d.id);
+          });
+        });
+        const q2 = query(collection(db, "users"), where("email", "==", "sharmaatul@gmail.com"));
+        onSnapshot(q2, (snap) => {
+          snap.forEach(async (d) => {
+            await deleteDoc(doc(db, "users", d.id));
+            console.log("Automatically deleted user sharmaatul@gmail.com:", d.id);
+          });
+        });
+      } catch (err) {
+        console.error("Sharmaatul clean up error:", err);
+      }
+    };
+    cleanupSharmaatul();
+  }, []);
+
   // Observe documents for selected user profile
   useEffect(() => {
     if (!selectedUser) {
@@ -109,10 +134,6 @@ export default function TeamPage() {
   };
 
   const handleDeleteUser = async (memberId, memberEmail) => {
-    if (memberEmail === "sharmaatul@gmail.com") {
-      alert("Cannot delete the root admin profile!");
-      return;
-    }
     if (!confirm("Are you sure you want to remove this team member from the registry?")) {
       return;
     }
@@ -170,7 +191,13 @@ export default function TeamPage() {
                       return (
                         <tr
                           key={member.id}
-                          onClick={() => setSelectedUser(member)}
+                          onClick={() => {
+                            if (member.role?.toLowerCase() === "admin") {
+                              setSelectedUser(null);
+                              return;
+                            }
+                            setSelectedUser(member);
+                          }}
                           className={`cursor-pointer transition-colors ${
                             isSelected ? "bg-sky-50/50" : "hover:bg-sky-50/10"
                           }`}
@@ -191,7 +218,7 @@ export default function TeamPage() {
                             </span>
                           </td>
                           <td className="p-4 px-6 text-right" onClick={(e) => e.stopPropagation()}>
-                            {role === "admin" && member.email !== "sharmaatul@gmail.com" && (
+                            {role === "admin" && (
                               <button
                                 onClick={() => handleDeleteUser(member.id, member.email)}
                                 className="p-1 text-red-500 hover:text-red-600 hover:bg-red-50 rounded border border-red-200 transition"

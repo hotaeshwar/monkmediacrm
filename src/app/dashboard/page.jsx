@@ -616,58 +616,58 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               
               {/* Card: MRR */}
-              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-br from-sky-500 to-indigo-600 text-white rounded-3xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Monthly Retainers</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${mrr.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Active recurring value</p>
+                  <p className="text-[10px] font-bold text-sky-100 uppercase tracking-widest">Monthly Retainers</p>
+                  <h3 className="text-2xl font-black text-white mt-1">${mrr.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-sky-100 mt-1 font-semibold">Active recurring value</p>
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white">
                   <DollarSign className="w-5 h-5" />
                 </div>
               </div>
 
               {/* Card: Revenue this month */}
-              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-3xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Received This Month</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${revenueReceivedThisMonth.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Processed billing totals</p>
+                  <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-widest">Received This Month</p>
+                  <h3 className="text-2xl font-black text-white mt-1">${revenueReceivedThisMonth.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-emerald-100 mt-1 font-semibold">Processed billing totals</p>
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white">
                   <Activity className="w-5 h-5" />
                 </div>
               </div>
 
               {/* Card: Outstanding payments */}
-              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-3xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Total Outstanding</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${outstandingPayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] font-bold text-amber-100 uppercase tracking-widest">Total Outstanding</p>
+                  <h3 className="text-2xl font-black text-white mt-1">${outstandingPayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
                   {overduePayments > 0 ? (
-                    <p className="text-[10px] text-red-500 mt-1 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" />
+                    <p className="text-[10px] text-white bg-red-600/40 px-1.5 py-0.5 rounded-lg mt-1 font-semibold flex items-center gap-1 w-fit">
+                      <AlertTriangle className="w-3 h-3 text-red-100" />
                       ${overduePayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} overdue
                     </p>
                   ) : (
-                    <p className="text-[10px] text-sky-400 mt-1 font-semibold">All invoice balances</p>
+                    <p className="text-[10px] text-amber-100 mt-1 font-semibold">All invoice balances</p>
                   )}
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white">
                   <TrendingDown className="w-5 h-5" />
                 </div>
               </div>
 
               {/* Card: Estimated Profit */}
-              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white rounded-3xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Estimated Profit</p>
-                  <h3 className={`text-2xl font-bold mt-1 ${estimatedProfit >= 0 ? "text-sky-600" : "text-red-500"}`}>
+                  <p className="text-[10px] font-bold text-violet-100 uppercase tracking-widest">Estimated Profit</p>
+                  <h3 className="text-2xl font-black text-white mt-1">
                     ${estimatedProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                   </h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Expenses: ${monthlyExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p className="text-[10px] text-violet-100 mt-1 font-semibold">Expenses: ${monthlyExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white">
                   <CalendarCheck className="w-5 h-5" />
                 </div>
               </div>
@@ -680,37 +680,37 @@ export default function Dashboard() {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
               {/* Retainers Added Card */}
-              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-3xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Added</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${retainerAdded.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Total retainer billing</p>
+                  <p className="text-[10px] font-bold text-blue-100 uppercase tracking-widest">Retainers Added</p>
+                  <h3 className="text-2xl font-black text-white mt-1">${retainerAdded.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-blue-100 mt-1 font-semibold">Total retainer billing</p>
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white">
                   <FileText className="w-5 h-5" />
                 </div>
               </div>
               
               {/* Retainers Collected Card */}
-              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-br from-teal-500 to-emerald-600 text-white rounded-3xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Collected</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${retainerReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Processed payments</p>
+                  <p className="text-[10px] font-bold text-teal-100 uppercase tracking-widest">Retainers Collected</p>
+                  <h3 className="text-2xl font-black text-white mt-1">${retainerReceived.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-teal-100 mt-1 font-semibold">Processed payments</p>
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white">
                   <CheckSquare className="w-5 h-5" />
                 </div>
               </div>
               
               {/* Retainers Due Card */}
-              <div className="p-5 bg-white border border-sky-100 rounded-3xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-3xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">Retainers Due</p>
-                  <h3 className="text-2xl font-bold text-sky-600 mt-1">${retainerDue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
-                  <p className="text-[10px] text-sky-400 mt-1 font-semibold">Outstanding balance</p>
+                  <p className="text-[10px] font-bold text-rose-100 uppercase tracking-widest">Retainers Due</p>
+                  <h3 className="text-2xl font-black text-white mt-1">${retainerDue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
+                  <p className="text-[10px] text-rose-100 mt-1 font-semibold">Outstanding balance</p>
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white">
                   <AlertTriangle className="w-5 h-5" />
                 </div>
               </div>

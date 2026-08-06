@@ -74,6 +74,25 @@ export default function ClientProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case "Completed":
+        return "bg-emerald-50 border border-emerald-200 text-emerald-600";
+      case "In Progress":
+        return "bg-sky-50 border border-sky-200 text-sky-600";
+      case "On Hold":
+        return "bg-amber-50 border border-amber-200 text-amber-600";
+      case "Cancelled":
+        return "bg-rose-50 border border-rose-200 text-rose-600";
+      case "Awaiting Deposit":
+        return "bg-purple-50 border border-purple-200 text-purple-600";
+      case "Planned":
+        return "bg-slate-50 border border-slate-200 text-slate-600";
+      default:
+        return "bg-sky-50/50 border border-sky-100 text-sky-500";
+    }
+  };
+
   // Form states inside tabs
   const [isEditingClient, setIsEditingClient] = useState(false);
   const [editData, setEditData] = useState(null);
@@ -1951,7 +1970,7 @@ export default function ClientProfilePage() {
                       <th className="p-4 px-6 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                  <tbody className="text-xs text-sky-600 font-extrabold divide-y divide-sky-100">
                     {projects.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="p-8 text-center text-sky-400">
@@ -1964,7 +1983,7 @@ export default function ClientProfilePage() {
                           <td className="p-4 px-6 font-bold">{p.name}</td>
                           <td className="p-4 px-6">{p.type}</td>
                           <td className="p-4 px-6">
-                            <span className="px-2 py-0.5 border border-sky-100 text-sky-500 rounded bg-sky-50/30">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${getStatusBadgeClass(p.status)}`}>
                               {p.status}
                             </span>
                           </td>
@@ -2614,7 +2633,7 @@ export default function ClientProfilePage() {
                           <th className="p-3 px-4 text-right">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                      <tbody className="text-xs text-sky-600 font-extrabold divide-y divide-sky-100">
                         {synthesizedProjectInvoices.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="p-8 text-center text-sky-400">
@@ -2693,7 +2712,7 @@ export default function ClientProfilePage() {
                           <th className="p-3 px-4 text-right">Amount</th>
                         </tr>
                       </thead>
-                      <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                      <tbody className="text-xs text-sky-600 font-extrabold divide-y divide-sky-100">
                         {clientPayments.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="p-8 text-center text-sky-400">
@@ -2804,7 +2823,7 @@ export default function ClientProfilePage() {
                       <th className="p-4 px-6 text-right">Published Link</th>
                     </tr>
                   </thead>
-                  <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                  <tbody className="text-xs text-sky-600 font-extrabold divide-y divide-sky-100">
                     {contentList.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="p-8 text-center text-sky-400">
@@ -2919,7 +2938,7 @@ export default function ClientProfilePage() {
                         <th className="p-4 px-6 text-right w-36">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                    <tbody className="text-xs text-sky-600 font-extrabold divide-y divide-sky-100">
                       {documents.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="p-8 text-center text-sky-400">
@@ -3206,7 +3225,7 @@ export default function ClientProfilePage() {
                                   {role !== "client" && <th className="p-4 px-6 text-right w-24">Actions</th>}
                                 </tr>
                               </thead>
-                              <tbody className="text-xs text-sky-600 font-semibold divide-y divide-sky-100">
+                              <tbody className="text-xs text-sky-600 font-extrabold divide-y divide-sky-100">
                                 {trackedItems.length === 0 ? (
                                   <tr>
                                     <td colSpan={6} className="p-8 text-center text-sky-400">
