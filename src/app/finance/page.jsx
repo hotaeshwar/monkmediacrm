@@ -269,11 +269,12 @@ export default function FinancePage() {
         const total = baseVal + tax;
 
         // Respect real invoice values if they exist
-        const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? total : 0);
-        const balance = total - amountPaid;
+        const invoiceTotal = realInv?.total || total;
+        const amountPaid = realInv ? (Number(realInv.amountPaid) || 0) : (proj.status === "Completed" ? invoiceTotal : 0);
+        const balance = invoiceTotal - amountPaid;
         
         let status = "Due";
-        if (amountPaid >= total && total > 0) {
+        if (amountPaid >= invoiceTotal && invoiceTotal > 0) {
           status = "Received";
         } else if (amountPaid > 0 && balance > 0) {
           status = "Partial";
@@ -290,7 +291,7 @@ export default function FinancePage() {
           dueDate: realInv?.dueDate || proj.endDate || proj.deadline || new Date().toISOString().split("T")[0],
           amount: realInv?.amount || baseVal,
           tax: realInv?.tax || tax,
-          total: realInv?.total || total,
+          total: invoiceTotal,
           amountPaid,
           balance,
           status,
@@ -1429,12 +1430,15 @@ export default function FinancePage() {
                             </td>
                             <td className="p-4 px-6 text-right">${Number(inv.amountPaid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 px-6 text-right font-bold">
-                              {inv.status === "Partial" ? (
-                                <span className="text-amber-500">
-                                  ${Number(inv.total - inv.amountPaid).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} Due
+                              {inv.balance > 0 ? (
+                                <span className="text-red-500 font-extrabold">
+                                  ${Number(inv.balance).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  {inv.status === "Partial" && " Due"}
                                 </span>
                               ) : (
-                                `$${Number(inv.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                                <span className="text-sky-600 font-medium">
+                                  $0.00
+                                </span>
                               )}
                             </td>
                             <td className="p-4 px-6 text-right w-1 whitespace-nowrap">
